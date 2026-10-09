@@ -166,6 +166,11 @@ public class TwitchGqlRepository : BotRepository<TwitchUser>
         {
             dropCampaign.TimeBasedDrops =
                 dropCampaign.TimeBasedDrops.OrderBy(drop => drop.RequiredMinutesWatched).ToList();
+
+            if (dropCampaign.Game is not null && string.IsNullOrEmpty(dropCampaign.Game.DisplayName))
+            {
+                dropCampaign.Game.DisplayName = dropCampaign.Game.Name;
+            }
         }
 
         return inventory;

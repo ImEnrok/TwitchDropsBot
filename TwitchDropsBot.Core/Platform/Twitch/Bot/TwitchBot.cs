@@ -71,6 +71,35 @@ public class TwitchBot : BaseBot<TwitchUser>
         var inventory = await BotUser.TwitchRepository.FetchInventoryDropsAsync();
         DateTime now = DateTime.Now;
 
+        // Fallback for accounts where Twitch returns an empty drops dashboard
+        // (ViewerDropsDashboard can be empty while Inventory still lists in-progress campaigns).
+        if (inventory?.DropCampaignsInProgress is { Count: > 0 })
+        {
+            var existingCampaignIds = new HashSet<string>(thingsToWatch.Select(c => c.Id));
+            var favouriteGamesSet = BotUser.FavouriteGames.Select(game => game.ToLower()).ToHashSet();
+
+            foreach (var inProgressCampaign in inventory.DropCampaignsInProgress)
+            {
+                if (inProgressCampaign.Status != "ACTIVE" || existingCampaignIds.Contains(inProgressCampaign.Id))
+                {
+                    continue;
+                }
+
+                if (inProgressCampaign.Game is not null)
+                {
+                    var gameName = (inProgressCampaign.Game.DisplayName ?? inProgressCampaign.Game.Name ?? string.Empty)
+                        .ToLower();
+                    if (favouriteGamesSet.Contains(gameName) ||
+                        favouriteGamesSet.Contains((inProgressCampaign.Game.Slug ?? string.Empty).ToLower()))
+                    {
+                        inProgressCampaign.Game.IsFavorite = true;
+                    }
+                }
+
+                thingsToWatch.Add(inProgressCampaign);
+            }
+        }
+
         finishedCampaigns.RemoveAll(campaign =>
             campaign.EndAt.HasValue && campaign.EndAt.Value.ToLocalTime().AddHours(1) < now);
 
@@ -656,9 +685,13 @@ public class TwitchBot : BaseBot<TwitchUser>
             }
 
             var tempDropCampaign = await BotUser.TwitchRepository.FetchTimeBasedDropsAsync(campaign.Id);
-            campaign.TimeBasedDrops = tempDropCampaign.TimeBasedDrops;
-            campaign.Game = tempDropCampaign.Game;
-            campaign.Allow = tempDropCampaign.Allow;
+
+            if (tempDropCampaign is not null)
+            {
+                campaign.TimeBasedDrops = tempDropCampaign.TimeBasedDrops;
+                campaign.Game = tempDropCampaign.Game;
+                campaign.Allow = tempDropCampaign.Allow;
+            }
 
             if (campaign.TimeBasedDrops.Count == 0)
             {
