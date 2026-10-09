@@ -7,6 +7,7 @@
 > - **Inventory fallback** — accounts whose `ViewerDropsDashboard` returns an empty campaigns list (while their campaigns are still visible in the Inventory) are now handled: the bot watches in-progress campaigns taken from the Inventory instead of stopping with *"NoBroadcasterOrNoCampaignLeft"*.
 > - **Null-safe campaign details** — `DropCampaignDetails` returning `null` no longer breaks broadcaster selection.
 > - **Game name fallback** for Inventory campaigns (proper game name in logs and UI).
+> - **Auto-seeding** — when there is nothing to watch, the bot finds a live stream of a favourite game with drops enabled (game directory + `DROPS_ENABLED` filter) and starts the campaign by watching it briefly, so it appears in the Inventory and can be farmed normally afterwards.
 > - Includes the upstream **watch-time fix** (PR [#48](https://github.com/Alorf/TwitchDropsBot/pull/48)) — stream segments are requested while watching, so Twitch counts watch time again.
 > - **Working "Add New Account" button** — the device-code login now uses the SMARTBOX (Android TV) client id, since Twitch disabled it for the Android app client id upstream ([issue #42](https://github.com/Alorf/TwitchDropsBot/issues/42)). Note: accounts added this way receive SMARTBOX-bound tokens — they see campaigns through the drops Inventory (handled by the Inventory fallback above); pre-existing Android-bound tokens keep the full campaign list. Polling window extended to 20 minutes.
 >

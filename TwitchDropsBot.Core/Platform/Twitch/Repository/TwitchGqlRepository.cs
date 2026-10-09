@@ -219,6 +219,29 @@ public class TwitchGqlRepository : BotRepository<TwitchUser>
         return resp?.Data.Game;
     }
 
+    public async Task<Game?> FetchGameByNameAsync(string name)
+    {
+        var query = new GraphQLRequest
+        {
+            OperationName = "GameByName",
+            Query = @"query GameByName($name: String!) {
+                game(name: $name) {
+                    id
+                    slug
+                    displayName
+                }
+            }",
+            Variables = new
+            {
+                name
+            }
+        };
+
+        dynamic? resp = await DoGQLRequestAsync(query);
+
+        return resp?.Data.Game;
+    }
+
     public async Task<PlaybackAccessToken?> FetchPlaybackAccessTokenAsync(string login)
     {
         var query = CreateQuery("PlaybackAccessToken");

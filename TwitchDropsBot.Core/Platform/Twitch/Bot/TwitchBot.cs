@@ -111,9 +111,21 @@ public class TwitchBot : BaseBot<TwitchUser>
 
         await CheckForClaim(inventory);
 
+        var seedAttempted = false;
+
         if (thingsToWatch.Count == 0)
         {
-            throw new NoBroadcasterOrNoCampaignLeft();
+            seedAttempted = true;
+            var seededCampaign = await TrySeedNewCampaignAsync();
+
+            if (seededCampaign is not null)
+            {
+                thingsToWatch.Add(seededCampaign);
+            }
+            else
+            {
+                throw new NoBroadcasterOrNoCampaignLeft();
+            }
         }
 
         if (BotUser.OnlyConnectedAccounts)
@@ -172,7 +184,22 @@ public class TwitchBot : BaseBot<TwitchUser>
         {
             if (thingsToWatch.Count == 0)
             {
-                throw new NoBroadcasterOrNoCampaignLeft();
+                if (seedAttempted)
+                {
+                    throw new NoBroadcasterOrNoCampaignLeft();
+                }
+
+                seedAttempted = true;
+                var seededCampaign = await TrySeedNewCampaignAsync();
+
+                if (seededCampaign is not null)
+                {
+                    thingsToWatch.Add(seededCampaign);
+                }
+                else
+                {
+                    throw new NoBroadcasterOrNoCampaignLeft();
+                }
             }
 
             (campaign, broadcaster) = await SelectBroadcasterAsync(thingsToWatch, inventory);
@@ -283,6 +310,92 @@ public class TwitchBot : BaseBot<TwitchUser>
         await WatchStreamAsync(broadcaster, dropCurrentRewardGroup, campaign);
 
         Logger.LogDebug("Loop ended");
+    }
+
+    // When there is nothing to watch (e.g. accounts whose drops dashboard is empty and
+    // no campaigns are in progress yet), try to "seed" a new campaign: find a live
+    // stream of a favourite game with drops enabled, watch it for a couple of minutes,
+    // so the campaign appears in the Inventory and can be farmed normally afterwards.
+    private async Task<AbstractCampaign?> TrySeedNewCampaignAsync()
+    {
+        foreach (var gameName in _gamesToCheck)
+        {
+            try
+            {
+                var game = await BotUser.TwitchRepository.FetchGameByNameAsync(gameName);
+
+                if (game is null || string.IsNullOrEmpty(game.Slug))
+                {
+                    continue;
+                }
+
+                // Live streams with drops enabled for this game
+                var directoryGame = await BotUser.TwitchRepository.FetchDirectoryPageGameAsync(game.Slug, true);
+
+                var edges = directoryGame?.Streams?.Edges;
+
+                if (edges is null || edges.Count == 0)
+                {
+                    continue;
+                }
+
+                var topBroadcasters = edges
+                    .OrderByDescending(x => x.Node.ViewersCount)
+                    .Select(x => x.Node.Broadcaster)
+                    .Where(x => x is not null)
+                    .Take(3)
+                    .ToList();
+
+                foreach (var broadcaster in topBroadcasters)
+                {
+                    try
+                    {
+                        Logger.LogInformation(
+                            "Nothing to watch — seeding a new campaign: watching {broadcaster} ({gameName})...",
+                            broadcaster.Login, gameName);
+
+                        for (var i = 0; i < 3; i++)
+                        {
+                            await BotUser.WatchManager.WatchStreamAsync(broadcaster, game);
+                            await Task.Delay(TimeSpan.FromSeconds(35));
+                        }
+
+                        BotUser.WatchManager.Close();
+                        await Task.Delay(TimeSpan.FromSeconds(10));
+
+                        var inventory = await BotUser.TwitchRepository.FetchInventoryDropsAsync();
+
+                        var seededCampaign = inventory?.DropCampaignsInProgress?.FirstOrDefault(campaign =>
+                            campaign.Status == "ACTIVE" &&
+                            campaign.Game is not null &&
+                            (string.Equals(campaign.Game.Slug, game.Slug, StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(campaign.Game.DisplayName ?? campaign.Game.Name, gameName,
+                                 StringComparison.OrdinalIgnoreCase)));
+
+                        if (seededCampaign is not null)
+                        {
+                            seededCampaign.Game!.IsFavorite = true;
+                            Logger.LogInformation("New campaign seeded: {name} ({gameName})", seededCampaign.Name, gameName);
+                            return seededCampaign;
+                        }
+
+                        // Watched this channel, but Twitch hasn't registered the campaign yet —
+                        // it should show up in the Inventory within a few minutes.
+                        return null;
+                    }
+                    catch (StreamOffline)
+                    {
+                        BotUser.WatchManager.Close();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to seed a campaign for {gameName}", gameName);
+            }
+        }
+
+        return null;
     }
 
     private async Task<DropCurrentSession?> CheckDropCurrentSession(User broadcaster,
