@@ -350,6 +350,19 @@ public class TwitchBot : BaseBot<TwitchUser>
             {
                 try
                 {
+                    // Only seed channels that actually offer a (non-reward) drop campaign
+                    // to this account; the directory's DROPS_ENABLED filter is not per-viewer.
+                    var availableDrops = await BotUser.TwitchRepository.FetchAvailableDropsAsync(broadcaster.Id);
+
+                    if (availableDrops is null || availableDrops.Count == 0 ||
+                        availableDrops.All(campaign => campaign.Summary?.IsRewardCampaign == true))
+                    {
+                        Logger.LogDebug(
+                            "No seedable drop campaign on {broadcaster} ({gameName}), skipping channel",
+                            broadcaster.Login, gameName);
+                        continue;
+                    }
+
                     Logger.LogInformation(
                         "Seeding a new campaign: watching {broadcaster} ({gameName})...",
                         broadcaster.Login, gameName);
@@ -381,6 +394,7 @@ public class TwitchBot : BaseBot<TwitchUser>
 
                     // Watched this channel, but Twitch hasn't registered the campaign yet —
                     // it should show up in the Inventory within a few minutes.
+                    _seedFailures[gameName.ToLower()] = DateTime.UtcNow;
                     return null;
                 }
                 catch (StreamOffline)
@@ -421,6 +435,7 @@ public class TwitchBot : BaseBot<TwitchUser>
     }
 
     private readonly Dictionary<string, DateTime> _discoveryGameChecks = new();
+    private readonly Dictionary<string, DateTime> _seedFailures = new();
 
     // Proactively look for new campaigns of favourite games that are not in the current
     // watch list yet (e.g. brand new campaigns never watched on this account). Checks at
@@ -447,6 +462,14 @@ public class TwitchBot : BaseBot<TwitchUser>
 
             if (_discoveryGameChecks.TryGetValue(gameKey, out var lastCheck) &&
                 (DateTime.UtcNow - lastCheck).TotalMinutes < 15)
+            {
+                continue;
+            }
+
+            // A recent seeding attempt for this game didn't register a campaign —
+            // give it a rest before burning more watch time on it.
+            if (_seedFailures.TryGetValue(gameKey, out var lastFailure) &&
+                (DateTime.UtcNow - lastFailure).TotalMinutes < 60)
             {
                 continue;
             }

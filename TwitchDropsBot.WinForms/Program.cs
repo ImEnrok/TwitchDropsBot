@@ -19,6 +19,16 @@ namespace TwitchDropsBot.WinForms
         [STAThread]
         static void Main()
         {
+            // Prevent multiple instances (they would fight over the same accounts and log files)
+            using var singleInstance = new Mutex(true, "TwitchDropsBot.SingleInstance", out var isNewInstance);
+
+            if (!isNewInstance)
+            {
+                MessageBox.Show("TwitchDropsBot is already running.", "TwitchDropsBot",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
             var builder = new ConfigurationBuilder()
                 .AddJsonFile("appsettings.json", false, true)
                 .AddJsonFile("appsettings.Development.json", true, true);

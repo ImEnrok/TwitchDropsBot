@@ -14,7 +14,7 @@ public class Channel
     public string? Name { get; set; }
 
     [JsonPropertyName("viewerDropCampaigns")]
-    public DropCampaign? ViewerDropCampaigns { get; set; }
+    public List<DropCampaign>? ViewerDropCampaigns { get; set; }
 
     [JsonPropertyName("self")]
     public ChannelSelfEdge Self { get; set; }
