@@ -365,3 +365,7 @@ MigrationBackup/
 FodyWeavers.xsd
 publish-local-repository.bat
 /publish-local-repository.sh
+
+# Bot runtime config (contains OAuth tokens - never commit)
+config.json
+config.json.*

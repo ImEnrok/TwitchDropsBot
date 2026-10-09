@@ -1,5 +1,16 @@
 # TwitchDropsBot
 
+> [!IMPORTANT]
+> **This is a fork of [Alorf/TwitchDropsBot](https://github.com/Alorf/TwitchDropsBot)** (MIT License — all credit to the original author).
+>
+> **Added in this fork** (on top of upstream `master` @ `dbee9a0`):
+> - **Inventory fallback** — accounts whose `ViewerDropsDashboard` returns an empty campaigns list (while their campaigns are still visible in the Inventory) are now handled: the bot watches in-progress campaigns taken from the Inventory instead of stopping with *"NoBroadcasterOrNoCampaignLeft"*.
+> - **Null-safe campaign details** — `DropCampaignDetails` returning `null` no longer breaks broadcaster selection.
+> - **Game name fallback** for Inventory campaigns (proper game name in logs and UI).
+> - Includes the upstream **watch-time fix** (PR [#48](https://github.com/Alorf/TwitchDropsBot/pull/48)) — stream segments are requested while watching, so Twitch counts watch time again.
+>
+> **Ready-to-use Windows build**: [Releases](https://github.com/ImEnrok/TwitchDropsBot/releases). The archive also includes `Add-TwitchAccount.cmd` — a helper that logs in a Twitch account via SMARTBOX device-flow, because the built-in *"Add New Account"* button is broken upstream ([issue #42](https://github.com/Alorf/TwitchDropsBot/issues/42)).
+
 This project is inspired by [TwitchDropsMiner](https://github.com/DevilXD/TwitchDropsMiner/). I used it on Linux but faced several compatibility issues, so I decided to create my own solution.
 
 The main goal of this project is to help users claim their Twitch and Kick drops when they are unable to watch streams. For example, in Europe, some drops are hard to get because they require watching American streams late at night (e.g., Rust).
