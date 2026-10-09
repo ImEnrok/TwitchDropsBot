@@ -9,13 +9,19 @@ namespace TwitchDropsBot.Core.Platform.Twitch.Services;
 
 public class TwitchAuthService
 {
+    // SMARTBOX (Android TV) client id: the only official client that still allows
+    // external device-code login (Twitch disabled it for the Android app client id
+    // in September 2026). Tokens issued for this client work with the bot's requests
+    // (they are long-lived and accepted by GQL with the Android Client-Id header).
+    private const string DeviceFlowClientId = "ue6666qo983tsx6so1t0vnawi233wa";
+
     public static async Task<JsonDocument> GetCodeAsync()
     {
         var client = new HttpClient();
         var request = new HttpRequestMessage(HttpMethod.Post, "https://id.twitch.tv/oauth2/device");
         var content = new MultipartFormDataContent();
 
-        content.Add(new StringContent(Constant.TwitchDevice.ClientID), "client_id");
+        content.Add(new StringContent(DeviceFlowClientId), "client_id");
         content.Add(
             new StringContent("channel_read chat:read user_blocks_edit user_blocks_read user_follows_edit user_read"),
             "scopes");
@@ -32,7 +38,8 @@ public class TwitchAuthService
     
     public static async Task<JsonDocument?> CodeConfirmationAsync(string deviceCode, ILogger logger, CancellationToken? token = default)
     {
-        for (int i = 0; i < 10; i++)
+        // Poll for up to 20 minutes (device codes are valid for 30 minutes).
+        for (int i = 0; i < 240; i++)
         {
             if (token != null && token.Value.IsCancellationRequested)
             {
@@ -44,7 +51,7 @@ public class TwitchAuthService
             var request = new HttpRequestMessage(HttpMethod.Post, "https://id.twitch.tv/oauth2/token");
             var content = new MultipartFormDataContent();
 
-            content.Add(new StringContent(Constant.TwitchDevice.ClientID), "client_id");
+            content.Add(new StringContent(DeviceFlowClientId), "client_id");
             content.Add(new StringContent(deviceCode), "device_code");
             content.Add(new StringContent("urn:ietf:params:oauth:grant-type:device_code"), "grant_type");
             request.Content = content;

@@ -8,8 +8,9 @@
 > - **Null-safe campaign details** — `DropCampaignDetails` returning `null` no longer breaks broadcaster selection.
 > - **Game name fallback** for Inventory campaigns (proper game name in logs and UI).
 > - Includes the upstream **watch-time fix** (PR [#48](https://github.com/Alorf/TwitchDropsBot/pull/48)) — stream segments are requested while watching, so Twitch counts watch time again.
+> - **Working "Add New Account" button** — the device-code login now uses the SMARTBOX (Android TV) client id, since Twitch disabled it for the Android app client id upstream ([issue #42](https://github.com/Alorf/TwitchDropsBot/issues/42)). Note: accounts added this way receive SMARTBOX-bound tokens — they see campaigns through the drops Inventory (handled by the Inventory fallback above); pre-existing Android-bound tokens keep the full campaign list. Polling window extended to 20 minutes.
 >
-> **Ready-to-use Windows build**: [Releases](https://github.com/ImEnrok/TwitchDropsBot/releases). The archive also includes `Add-TwitchAccount.cmd` — a helper that logs in a Twitch account via SMARTBOX device-flow, because the built-in *"Add New Account"* button is broken upstream ([issue #42](https://github.com/Alorf/TwitchDropsBot/issues/42)).
+> **Ready-to-use Windows build**: [Releases](https://github.com/ImEnrok/TwitchDropsBot/releases). The archive also includes `Add-TwitchAccount.cmd` — a standalone helper for the same device-flow login (useful without opening the app).
 
 This project is inspired by [TwitchDropsMiner](https://github.com/DevilXD/TwitchDropsMiner/). I used it on Linux but faced several compatibility issues, so I decided to create my own solution.
 
