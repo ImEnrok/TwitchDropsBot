@@ -164,15 +164,13 @@ public class TwitchBot : BaseBot<TwitchUser>
 
         thingsToWatch = thingsToWatch.OrderBy(x => x.GetEndDate()).ToList();
 
-        // Apply custom sort
-
-        //todo : Add switch here with rules
-        favouriteCampaigns = favouriteCampaigns.OrderBy(x => x.GetEndDate()).ToList();
-        thingsToWatch = thingsToWatch.OrderBy(x => x.GetEndDate()).ToList();
-
-        // End custom sort
+        // Keep the favourite order from the config: favourite campaigns are already sorted
+        // by the priority list, do not re-sort them by end date.
 
         thingsToWatch = favouriteCampaigns.Concat(thingsToWatch).ToList();
+
+        Logger.LogDebug("Priority queue: {names}",
+            string.Join("; ", thingsToWatch.Select(c => $"{c.Name} [{(c.Game?.DisplayName ?? c.Game?.Name)}]")));
 
         // Proactively look for new campaigns of favourite games that are not in the list yet
         await TryDiscoverNewCampaignsAsync(thingsToWatch);
@@ -182,6 +180,7 @@ public class TwitchBot : BaseBot<TwitchUser>
         DropsRewardGroup? dropCurrentRewardGroup = null;
         User? broadcaster = null;
         AbstractCampaign? campaign = null;
+        var startedCampaigns = 0;
 
         do
         {
@@ -269,6 +268,22 @@ public class TwitchBot : BaseBot<TwitchUser>
 
             if (dropCurrentRewardGroup is null)
             {
+                // No progress on this campaign yet: it was never started on this account.
+                // Start it by watching the broadcaster for a couple of minutes, then re-check.
+                if (campaign is DropCampaign dropCampaign &&
+                    dropCampaign.Self?.IsAccountConnected != false &&
+                    startedCampaigns < 2 &&
+                    !(_campaignStartFailures.TryGetValue(campaign.Id, out var lastStartFailure) &&
+                      (DateTime.UtcNow - lastStartFailure).TotalMinutes < 60))
+                {
+                    startedCampaigns++;
+                    dropCurrentRewardGroup = await TryStartCampaignAsync(broadcaster, campaign);
+                }
+            }
+
+            if (dropCurrentRewardGroup is null)
+            {
+                _campaignStartFailures[campaign.Id] = DateTime.UtcNow;
                 thingsToWatch.Remove(campaign);
                 continue;
             }
@@ -392,7 +407,7 @@ public class TwitchBot : BaseBot<TwitchUser>
                         return seededCampaign;
                     }
 
-                    // Watched this channel, but Twitch hasn't registered the campaign yet —
+                    // Watched this channel, but Twitch hasn't registered the campaign yet вЂ”
                     // it should show up in the Inventory within a few minutes.
                     _seedFailures[gameName.ToLower()] = DateTime.UtcNow;
                     return null;
@@ -436,6 +451,7 @@ public class TwitchBot : BaseBot<TwitchUser>
 
     private readonly Dictionary<string, DateTime> _discoveryGameChecks = new();
     private readonly Dictionary<string, DateTime> _seedFailures = new();
+    private readonly Dictionary<string, DateTime> _campaignStartFailures = new();
 
     // Proactively look for new campaigns of favourite games that are not in the current
     // watch list yet (e.g. brand new campaigns never watched on this account). Checks at
@@ -466,7 +482,7 @@ public class TwitchBot : BaseBot<TwitchUser>
                 continue;
             }
 
-            // A recent seeding attempt for this game didn't register a campaign —
+            // A recent seeding attempt for this game didn't register a campaign вЂ”
             // give it a rest before burning more watch time on it.
             if (_seedFailures.TryGetValue(gameKey, out var lastFailure) &&
                 (DateTime.UtcNow - lastFailure).TotalMinutes < 60)
@@ -579,6 +595,44 @@ public class TwitchBot : BaseBot<TwitchUser>
             .OrderBy(x => x.ProgressCriteria.Requirements.MinutesWatched).ToList();
 
         return filteredCampaignProgress.FirstOrDefault();
+    }
+
+    // Start a campaign that has no progress on this account yet: watch the broadcaster
+    // briefly so Twitch registers the campaign, then re-check its progress.
+    private async Task<DropsRewardGroup?> TryStartCampaignAsync(User broadcaster, AbstractCampaign campaign)
+    {
+        try
+        {
+            Logger.LogInformation(
+                "Campaign {campaignName} has no progress yet - starting it by watching {broadcaster}...",
+                campaign.Name, broadcaster.Login);
+
+            for (var i = 0; i < 3; i++)
+            {
+                await BotUser.WatchManager.WatchStreamAsync(broadcaster, campaign.Game);
+                await Task.Delay(TimeSpan.FromSeconds(35));
+            }
+
+            BotUser.WatchManager.Close();
+            await Task.Delay(TimeSpan.FromSeconds(10));
+
+            var rewardGroup = await CheckDropProgress(broadcaster, campaign);
+
+            if (rewardGroup is null)
+            {
+                Logger.LogInformation(
+                    "Campaign {campaignName} is still not registered on this account; will retry later",
+                    campaign.Name);
+            }
+
+            return rewardGroup;
+        }
+        catch (System.Exception ex)
+        {
+            BotUser.WatchManager.Close();
+            Logger.LogError(ex, "Failed to start campaign {campaignName}", campaign.Name);
+            return null;
+        }
     }
 
 
