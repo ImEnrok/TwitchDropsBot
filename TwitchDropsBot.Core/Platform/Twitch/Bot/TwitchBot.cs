@@ -407,7 +407,7 @@ public class TwitchBot : BaseBot<TwitchUser>
                         return seededCampaign;
                     }
 
-                    // Watched this channel, but Twitch hasn't registered the campaign yet вЂ”
+                    // Watched this channel, but Twitch hasn't registered the campaign yet РІР‚вЂќ
                     // it should show up in the Inventory within a few minutes.
                     _seedFailures[gameName.ToLower()] = DateTime.UtcNow;
                     return null;
@@ -482,7 +482,7 @@ public class TwitchBot : BaseBot<TwitchUser>
                 continue;
             }
 
-            // A recent seeding attempt for this game didn't register a campaign вЂ”
+            // A recent seeding attempt for this game didn't register a campaign РІР‚вЂќ
             // give it a rest before burning more watch time on it.
             if (_seedFailures.TryGetValue(gameKey, out var lastFailure) &&
                 (DateTime.UtcNow - lastFailure).TotalMinutes < 60)
@@ -1073,8 +1073,43 @@ public class TwitchBot : BaseBot<TwitchUser>
                 continue;
             }
 
-            // Select the channel that have the most viewers
+            // Sort the channels by viewers count
             game.Streams.Edges = game.Streams.Edges.OrderByDescending(x => x.Node.ViewersCount).ToList();
+
+            // The directory's DROPS_ENABLED filter is not campaign-specific, so make sure
+            // the chosen streamer actually offers this campaign to the account.
+            if (campaign is DropCampaign)
+            {
+                foreach (var candidate in game.Streams.Edges)
+                {
+                    var candidateBroadcaster = candidate.Node?.Broadcaster;
+
+                    if (candidateBroadcaster is null)
+                    {
+                        continue;
+                    }
+
+                    var availableDrops =
+                        await BotUser.TwitchRepository.FetchAvailableDropsAsync(candidateBroadcaster.Id);
+
+                    if (availableDrops is null || availableDrops.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    if (availableDrops.Any(drop => drop.Id == campaign.Id))
+                    {
+                        return (campaign, candidateBroadcaster);
+                    }
+                }
+
+                Logger.LogInformation(
+                    "No streamer currently offers campaign {campaignName}, skipping",
+                    campaign.Name);
+
+                return (campaign, null);
+            }
+
             var edge = game.Streams.Edges.FirstOrDefault();
             if (edge != null)
             {
