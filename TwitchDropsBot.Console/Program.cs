@@ -12,6 +12,14 @@ using TwitchDropsBot.Core.Platform.Shared.Helpers;
 using TwitchDropsBot.Core.Platform.Shared.Services.Extensions;
 using TwitchDropsBot.Core.Platform.Shared.Settings;
 
+using var singleInstance = new Mutex(true, "TwitchDropsBot.SingleInstance", out var isNewInstance);
+
+if (!isNewInstance)
+{
+    Console.Error.WriteLine("TwitchDropsBot is already running.");
+    return;
+}
+
 var builder = new ConfigurationBuilder()
     .AddJsonFile("appsettings.json", false, true)
     .AddJsonFile("appsettings.Development.json", true, true);
