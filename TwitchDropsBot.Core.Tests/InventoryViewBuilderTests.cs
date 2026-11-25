@@ -483,7 +483,7 @@ public class InventoryViewBuilderTests
     }
 
     [Fact]
-    public void Build_EarnedCampaignWithoutNameBrandOrGame_FallsBackToUnknownCampaign()
+    public void Build_EarnedCampaignWithoutNameBrandOrGame_FallsBackToEarnedAndOtherRewards()
     {
         var inventory = new Inventory
         {
@@ -513,7 +513,7 @@ public class InventoryViewBuilderTests
 
         var item = Assert.Single(InventoryViewBuilder.Build(inventory));
 
-        Assert.Equal("Unknown campaign", item.CampaignName);
+        Assert.Equal("Other rewards", item.CampaignName);
         Assert.Equal("Earned rewards", item.GameName);
     }
 
@@ -558,7 +558,7 @@ public class InventoryViewBuilderTests
     }
 
     [Fact]
-    public void Build_EarnedCampaignWithoutLookupMatch_FallsBackToUnknownCampaign()
+    public void Build_EarnedCampaignWithoutLookupMatch_FallsBackToOtherRewards()
     {
         var inventory = new Inventory
         {
@@ -592,8 +592,80 @@ public class InventoryViewBuilderTests
 
         var item = Assert.Single(InventoryViewBuilder.Build(inventory, campaignNames));
 
-        Assert.Equal("Unknown campaign", item.CampaignName);
+        Assert.Equal("Other rewards", item.CampaignName);
         Assert.Equal("Earned rewards", item.GameName);
+    }
+
+    [Fact]
+    public void Build_EarnedCampaignWithDetailsURLOnly_UsesDetailsHostAsGameName()
+    {
+        var inventory = new Inventory
+        {
+            EarnedDropRewards = new EarnedDropRewardConnection
+            {
+                Edges = new List<EarnedDropRewardEdge>
+                {
+                    new()
+                    {
+                        Node = new EarnedDropReward
+                        {
+                            Id = "earned-host",
+                            Status = "CLAIMED",
+                            Item = new DropsReward { Name = "Host Reward" },
+                            Campaign = new DropsCampaign
+                            {
+                                Id = "host-campaign",
+                                Name = null!,
+                                BrandName = null!,
+                                DetailsURL = "https://www.marvelrivals.com/twitchdrops/",
+                                Game = null!
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        var item = Assert.Single(InventoryViewBuilder.Build(inventory));
+
+        Assert.Equal("marvelrivals.com", item.GameName);
+        Assert.Equal("Other rewards", item.CampaignName);
+    }
+
+    [Fact]
+    public void Build_EarnedCampaignWithInvalidDetailsURL_FallsBackToEarnedRewards()
+    {
+        var inventory = new Inventory
+        {
+            EarnedDropRewards = new EarnedDropRewardConnection
+            {
+                Edges = new List<EarnedDropRewardEdge>
+                {
+                    new()
+                    {
+                        Node = new EarnedDropReward
+                        {
+                            Id = "earned-relative-host",
+                            Status = "CLAIMED",
+                            Item = new DropsReward { Name = "Relative Host Reward" },
+                            Campaign = new DropsCampaign
+                            {
+                                Id = "relative-host-campaign",
+                                Name = null!,
+                                BrandName = null!,
+                                DetailsURL = "/twitchdrops/",
+                                Game = null!
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        var item = Assert.Single(InventoryViewBuilder.Build(inventory));
+
+        Assert.Equal("Earned rewards", item.GameName);
+        Assert.Equal("Other rewards", item.CampaignName);
     }
 
     [Fact]

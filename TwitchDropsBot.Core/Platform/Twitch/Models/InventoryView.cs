@@ -153,15 +153,17 @@ public static class InventoryViewBuilder
                 var campaign = node.Campaign;
                 var game = campaign?.Game;
                 var campaignId = FirstNonEmpty(campaign?.Id);
-                var gameName = FirstNonEmpty(game?.DisplayName, game?.Name, campaign?.BrandName)
+                var gameName = FirstNonEmpty(
+                        game?.DisplayName,
+                        game?.Name,
+                        campaign?.BrandName,
+                        GetDetailsHost(campaign))
                     ?? "Earned rewards";
                 var campaignName = FirstNonEmpty(
                         campaign?.Name,
                         campaign?.BrandName,
-                        LookupCampaignName(campaignNames, campaignId),
-                        game?.DisplayName,
-                        game?.Name)
-                    ?? "Unknown campaign";
+                        LookupCampaignName(campaignNames, campaignId))
+                    ?? "Other rewards";
                 var gameImageUrl = FirstNonEmpty(game?.BoxArtUrl);
                 var isClaimed = string.Equals(node.Status, "CLAIMED", StringComparison.OrdinalIgnoreCase);
 
@@ -287,6 +289,26 @@ public static class InventoryViewBuilder
         }
 
         return "In progress";
+    }
+
+    private static string? GetDetailsHost(DropsCampaign? campaign)
+    {
+        var detailsUrl = campaign?.DetailsURL;
+        if (string.IsNullOrWhiteSpace(detailsUrl))
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(detailsUrl, UriKind.Absolute, out var uri)
+            || string.IsNullOrWhiteSpace(uri.Host))
+        {
+            return null;
+        }
+
+        const string wwwPrefix = "www.";
+        return uri.Host.StartsWith(wwwPrefix, StringComparison.OrdinalIgnoreCase)
+            ? uri.Host[wwwPrefix.Length..]
+            : uri.Host;
     }
 
     private static string? LookupCampaignName(IReadOnlyDictionary<string, string>? campaignNames, string? campaignId)
