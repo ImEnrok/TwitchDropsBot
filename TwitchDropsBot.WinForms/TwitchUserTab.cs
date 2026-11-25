@@ -205,9 +205,38 @@ namespace TwitchDropsBot.WinForms
             inventoryPanel.Controls.Add(inventoryTreeView);
             inventoryPanel.Controls.Add(inventoryRefreshButton);
 
-            groupBox2.Width = 300;
             groupBox2.Controls.Add(inventoryPanel);
             inventoryPanel.BringToFront();
+
+            var split = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Vertical,
+                SplitterWidth = 6,
+                IsSplitterFixed = false
+            };
+
+            currentTabPage.Controls.Add(split);
+            split.Panel1.Controls.Add(Bot);
+            split.Panel2.Controls.Add(groupBox2);
+            Bot.Dock = DockStyle.Fill;
+            groupBox2.Dock = DockStyle.Fill;
+            split.BringToFront();
+
+            var splitInitialized = false;
+            void InitializeSplitter()
+            {
+                if (splitInitialized || split.Width < 600) return;
+                split.Panel1MinSize = 350;
+                split.Panel2MinSize = 220;
+                split.SplitterDistance = Math.Max(split.Panel1MinSize, split.Width - 300);
+                splitInitialized = true;
+            }
+
+            split.SizeChanged += (_, _) => InitializeSplitter();
+            // The tab page already has a real size during construction, so the
+            // SizeChanged event may not fire again before the user resizes.
+            InitializeSplitter();
 
             inventoryRefreshTimer = new System.Windows.Forms.Timer(components)
             {
