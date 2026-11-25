@@ -346,7 +346,24 @@ namespace TwitchDropsBot.WinForms
 
             try
             {
-                var items = InventoryViewBuilder.Build(twitchUser.Inventory);
+                var campaignNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    var campaigns = await twitchUser.TwitchRepository.FetchDropsAsync();
+                    foreach (var campaign in campaigns)
+                    {
+                        if (!string.IsNullOrWhiteSpace(campaign.Id) && !string.IsNullOrWhiteSpace(campaign.Name))
+                        {
+                            campaignNames[campaign.Id] = campaign.Name;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    TryAppendLog($"Campaign name lookup failed: {ex.Message}");
+                }
+
+                var items = InventoryViewBuilder.Build(twitchUser.Inventory, campaignNames);
                 if (items.Count == 0)
                 {
                     if (IsCurrentInventoryLoad(generation))
@@ -513,7 +530,7 @@ namespace TwitchDropsBot.WinForms
 
                     inventoryTreeView.Nodes.Add(BuildSectionNode($"In progress ({inProgress.Count})", inProgress));
                     inventoryTreeView.Nodes.Add(BuildSectionNode($"Earned ({earned.Count})", earned));
-                    inventoryTreeView.ExpandAll();
+                    inventoryTreeView.CollapseAll();
                 }
                 finally
                 {
