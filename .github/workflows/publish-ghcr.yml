@@ -13,7 +13,7 @@ on:
       image:
         description: 'Docker repository (ex: owner/repo)'
         required: true
-        default: 'alorf/twitchdropsbot'
+        default: 'imenrok/twitchdropsbot'
       tag:
         description: 'Tag to push'
         required: true
@@ -48,7 +48,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: ghcr.io/${{ github.event.inputs.image || 'alorf/twitchdropsbot' }}
+          images: ghcr.io/${{ github.event.inputs.image || 'imenrok/twitchdropsbot' }}
           tags: |
             type=raw,value=dev,enable=${{ github.ref_type == 'branch' && github.event_name != 'workflow_dispatch' }}
             type=semver,pattern={{version}}

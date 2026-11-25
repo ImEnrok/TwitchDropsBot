@@ -34,7 +34,7 @@ public class NotificationService
         var normalizedImage = NormalizeImageUrl(itemImage, platformName);
 
         var embedBuilder = new EmbedBuilder()
-            .WithAuthor("TwitchDropsBot", url: "https://github.com/Alorf/TwitchDropsBot")
+            .WithAuthor("TwitchDropsBot", url: "https://github.com/ImEnrok/TwitchDropsBot")
             .WithTitle($"{user.Login} received a new item for **{gameName}**!")
             .WithDescription($"**{itemName}** has been claimed{(code != null ? $" — Code: `{code}`" : string.Empty)}")
             .WithColor(color)
@@ -55,7 +55,7 @@ public class NotificationService
         var normalizedImage = NormalizeImageUrl(itemImage, platformName);
 
         var embedBuilder = new EmbedBuilder()
-            .WithAuthor("TwitchDropsBot", url: "https://github.com/Alorf/TwitchDropsBot")
+            .WithAuthor("TwitchDropsBot", url: "https://github.com/ImEnrok/TwitchDropsBot")
             .WithTitle($"{user.Login} received a new item!")
             .WithDescription(message)
             .WithColor(color)
@@ -77,7 +77,7 @@ public class NotificationService
         var normalizedImage = NormalizeImageUrl(itemImage, platformName);
 
         var embedBuilder = new EmbedBuilder()
-            .WithAuthor("TwitchDropsBot", url: "https://github.com/Alorf/TwitchDropsBot")
+            .WithAuthor("TwitchDropsBot", url: "https://github.com/ImEnrok/TwitchDropsBot")
             .WithTitle($"{user.Login} {title}")
             .WithDescription(message)
             .WithColor(color)
@@ -110,7 +110,7 @@ public class NotificationService
         var normalizedImage = NormalizeImageUrl(itemImage, platformName);
 
         var claimEmbedBuilder = new EmbedBuilder()
-            .WithAuthor("TwitchDropsBot", url: "https://github.com/Alorf/TwitchDropsBot")
+            .WithAuthor("TwitchDropsBot", url: "https://github.com/ImEnrok/TwitchDropsBot")
             .WithTitle($"🎉 {user.Login} claimed an item for **{gameName}**!")
             .WithDescription($"**{itemName}** has been claimed!{(code != null ? $" — Code: `{code}`" : string.Empty)}")
             .WithColor(color)
@@ -136,7 +136,7 @@ public class NotificationService
                         .WithDescription($"The campaign **{campaignName}** is fully claimed!")
                         .WithColor(color)
                         .WithThumbnailUrl(normalizedImage)
-                        .WithAuthor("TwitchDropsBot", url: "https://github.com/Alorf/TwitchDropsBot")
+                        .WithAuthor("TwitchDropsBot", url: "https://github.com/ImEnrok/TwitchDropsBot")
                         .WithCurrentTimestamp()
                         .Build();
 
@@ -242,7 +242,7 @@ public class NotificationService
             .WithTitle(title)
             .WithDescription(descriptionBuilder.ToString())
             .WithColor(color)
-            .WithAuthor("TwitchDropsBot", url: "https://github.com/Alorf/TwitchDropsBot")
+            .WithAuthor("TwitchDropsBot", url: "https://github.com/ImEnrok/TwitchDropsBot")
             .WithCurrentTimestamp();
 
         // Use the image of the drop currently being farmed if available

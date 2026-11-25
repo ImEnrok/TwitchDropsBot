@@ -1,16 +1,16 @@
 # TwitchDropsBot
 
 > [!IMPORTANT]
-> **This is a fork of [Alorf/TwitchDropsBot](https://github.com/Alorf/TwitchDropsBot)** (MIT License — all credit to the original author).
+> **Custom build of TwitchDropsBot** (MIT License).
 >
-> **Added in this fork** (on top of upstream `master` @ `dbee9a0`):
+> **Added in this build:**
 > - **Inventory fallback** — accounts whose `ViewerDropsDashboard` returns an empty campaigns list (while their campaigns are still visible in the Inventory) are now handled: the bot watches in-progress campaigns taken from the Inventory instead of stopping with *"NoBroadcasterOrNoCampaignLeft"*.
 > - **Null-safe campaign details** — `DropCampaignDetails` returning `null` no longer breaks broadcaster selection.
 > - **Game name fallback** for Inventory campaigns (proper game name in logs and UI).
 > - **Auto-seeding & discovery** — the bot finds live streams of favourite games with drops enabled (game directory + `DROPS_ENABLED` filter) and starts campaigns by watching briefly, so they appear in the Inventory and can be farmed normally. Runs both when there is nothing to watch and proactively while watching, so brand new campaigns of favourite games are picked up automatically.
 > - **Priority list actually works** — the leftover "custom sort" that re-sorted campaigns by end date (overriding the favourite order from the config) is removed, so the bot follows your priority list. Campaigns with no progress yet are started automatically (with a 1-hour backoff on failed attempts).
-> - Includes the upstream **watch-time fix** (PR [#48](https://github.com/Alorf/TwitchDropsBot/pull/48)) — stream segments are requested while watching, so Twitch counts watch time again.
-> - **Working "Add New Account" button** — the device-code login now uses the SMARTBOX (Android TV) client id, since Twitch disabled it for the Android app client id upstream ([issue #42](https://github.com/Alorf/TwitchDropsBot/issues/42)). Note: accounts added this way receive SMARTBOX-bound tokens — they see campaigns through the drops Inventory (handled by the Inventory fallback above); pre-existing Android-bound tokens keep the full campaign list. Polling window extended to 20 minutes.
+> - Includes the **watch-time fix** (PR #48) — stream segments are requested while watching, so Twitch counts watch time again.
+> - **Working "Add New Account" button** — the device-code login now uses the SMARTBOX (Android TV) client id, since Twitch disabled it for the Android app client id (issue #42). Note: accounts added this way receive SMARTBOX-bound tokens — they see campaigns through the drops Inventory (handled by the Inventory fallback above); pre-existing Android-bound tokens keep the full campaign list. Polling window extended to 20 minutes.
 >
 > **Ready-to-use Windows build**: [Releases](https://github.com/ImEnrok/TwitchDropsBot/releases). The archive also includes `Add-TwitchAccount.cmd` — a standalone helper for the same device-flow login (useful without opening the app).
 
@@ -51,7 +51,7 @@ docker compose example :
 services:
   twitchdropsbot:
     container_name: TwitchDropsBot
-    image: ghcr.io/alorf/twitchdropsbot:latest
+    image: ghcr.io/imenrok/twitchdropsbot:latest
     volumes:
       - ./config:/app/Configuration
       - ./logs:/app/logs
@@ -76,7 +76,7 @@ docker compose up -d
 
 ### Compiled Version
 
-Whenever I consider a new version ready for release, I publish it on the [Releases](https://github.com/Alorf/TwitchDropsBot/releases) page.
+Whenever a new version is ready, it is published on the [Releases](https://github.com/ImEnrok/TwitchDropsBot/releases) page.
 
 #### Installing msquic
 
@@ -130,7 +130,7 @@ We welcome contributions! To contribute, follow these steps:
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](https://github.com/Alorf/TwitchDropsBot/blob/master/LICENSE.txt) file for details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE.txt) file for details.
 
 > **Disclaimer**
 > This project is provided for educational purposes and personal use only. Use it at your own risk. By using this project, you acknowledge that you have been warned. The author cannot be held responsible for any suspension, limitation, or banning of your accounts. Issues related to account limitations, suspensions, or bans will not be considered. Any use for automated farming or bot farms is strictly discouraged.
