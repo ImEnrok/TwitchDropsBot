@@ -1,22 +1,26 @@
-﻿using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Reflection;
+﻿using System.ComponentModel;
 using System.Windows.Forms;
-using TwitchDropsBot.Core;
 using TwitchDropsBot.Core.Platform.Shared.Bots;
 using TwitchDropsBot.Core.Platform.Twitch.Bot;
 using TwitchDropsBot.Core.Platform.Twitch.Models;
-using TwitchDropsBot.Core.Twitch.Models;
-using TwitchDropsBot.Core.Twitch.Models.Interfaces;
 
 namespace TwitchDropsBot.WinForms
 {
     public partial class TwitchUserTab : UserControl
     {
+        private static readonly HttpClient ImageHttpClient = CreateImageHttpClient();
+
         private readonly TwitchUser twitchUser;
         public TabPage TabPage => currentTabPage;
         private readonly object imageListLock = new object();
+
+        private System.Windows.Forms.Timer? inventoryRefreshTimer;
+        private Panel? inventoryPanel;
+        private Button? inventoryRefreshButton;
+        private TreeView? inventoryTreeView;
+        private ImageList? inventoryTreeImageList;
+        private bool _initialized;
+        private int _inventoryRefreshInProgress;
 
 
         public TwitchUserTab(TwitchUser twitchUser)
@@ -46,6 +50,25 @@ namespace TwitchDropsBot.WinForms
                     AppendLog($"{prefix}: {message}");
                 };
             }
+
+            _initialized = true;
+            inventoryRefreshTimer?.Start();
+            VisibleChanged += TwitchUserTab_VisibleChanged;
+
+            if (inventoryTreeView != null)
+            {
+                inventoryTreeView.HandleCreated += InventoryTreeView_HandleCreated;
+            }
+        }
+
+        private static HttpClient CreateImageHttpClient()
+        {
+            var client = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(10)
+            };
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("TwitchDropsBot/1.0");
+            return client;
         }
 
         private async void TwitchUser_PropertyChanged(object sender, PropertyChangedEventArgs e)
@@ -65,7 +88,7 @@ namespace TwitchDropsBot.WinForms
                 if (twitchUser?.Inventory != null)
                 {
                     // twitchUser.Logger.Information("Inventory requested");
-                    AppendLog("Inventory requested");
+                    TryAppendLog("Inventory requested");
 
                     try
                     {
@@ -74,7 +97,7 @@ namespace TwitchDropsBot.WinForms
                     catch (Exception ex)
                     {
                         // twitchUser.Logger.Error(ex);
-                        AppendLog(ex.Message);
+                        TryAppendLog(ex.Message);
                     }
 
                 }
@@ -141,191 +164,509 @@ namespace TwitchDropsBot.WinForms
 
         private void InitializeListView()
         {
-            dropsInventoryImageList.ImageSize = new System.Drawing.Size(64, 64);
-            gameImageList.ImageSize = new System.Drawing.Size(16, 16);
-            inventoryListView.LargeImageList = dropsInventoryImageList;
-            inventoryListView.SmallImageList = dropsInventoryImageList;
-            inventoryListView.GroupImageList = gameImageList;
+            // Keep the legacy ListView in the Designer for compatibility, but the
+            // inventory is rendered by the tree below.
+            inventoryListView.Visible = false;
 
-            // Add columns with initial width
-            inventoryListView.Columns.Add("Name", (int)(inventoryListView.Width * 0.3)); // 30% of ListView width
-            inventoryListView.Columns.Add("Status", (int)(inventoryListView.Width * 0.45)); // 50% of ListView width
-            inventoryListView.Columns.Add("Test", (int)(inventoryListView.Width * 0.1)); // 20% of ListView width
-
-            // Handle the resize event to adjust column widths dynamically
-            inventoryListView.Resize += (sender, e) =>
+            inventoryTreeImageList = new ImageList(components)
             {
-                int totalWidth = inventoryListView.Width;
-                inventoryListView.Columns[0].Width = (int)(totalWidth * 0.3);
-                inventoryListView.Columns[1].Width = (int)(totalWidth * 0.45);
-                inventoryListView.Columns[2].Width = (int)(totalWidth * 0.1);
+                ImageSize = new Size(24, 24),
+                ColorDepth = ColorDepth.Depth32Bit,
+                TransparentColor = Color.Transparent
             };
+
+            inventoryTreeView = new TreeView
+            {
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.None,
+                FullRowSelect = true,
+                HideSelection = false,
+                ShowNodeToolTips = true,
+                ItemHeight = 22,
+                ImageList = inventoryTreeImageList,
+                RightToLeft = RightToLeft.No,
+                TabIndex = 0
+            };
+
+            inventoryRefreshButton = new Button
+            {
+                Text = "Refresh",
+                Dock = DockStyle.Top,
+                Height = 28,
+                UseVisualStyleBackColor = true,
+                RightToLeft = RightToLeft.No,
+                TabIndex = 1
+            };
+            inventoryRefreshButton.Click += InventoryRefreshButton_Click;
+
+            inventoryPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                RightToLeft = RightToLeft.No
+            };
+            inventoryPanel.Controls.Add(inventoryTreeView);
+            inventoryPanel.Controls.Add(inventoryRefreshButton);
+
+            groupBox2.Width = 300;
+            groupBox2.Controls.Add(inventoryPanel);
+            inventoryPanel.BringToFront();
+
+            inventoryRefreshTimer = new System.Windows.Forms.Timer(components)
+            {
+                Interval = 60_000
+            };
+            inventoryRefreshTimer.Tick += InventoryRefreshTimer_Tick;
         }
 
-        private async Task<ListViewGroup> AddGroup(IInventorySystem item)
+        private void InventoryTreeView_HandleCreated(object? sender, EventArgs e)
         {
-            var ifExist = inventoryListView.Groups.Cast<ListViewGroup>().FirstOrDefault(group => group.Header == item.GetGroup());
-
-            if (ifExist != null)
+            if (_initialized && Visible)
             {
-                return ifExist;
+                _ = RefreshInventoryAsync();
+            }
+        }
+
+        private async void InventoryRefreshTimer_Tick(object? sender, EventArgs e)
+        {
+            await RefreshInventoryAsync();
+        }
+
+        private void TwitchUserTab_VisibleChanged(object? sender, EventArgs e)
+        {
+            if (!_initialized || !Visible)
+            {
+                return;
             }
 
-            if (item.GetGameImageUrl(16) != null)
+            _ = RefreshInventoryAsync();
+        }
+
+        private async void InventoryRefreshButton_Click(object? sender, EventArgs e)
+        {
+            await RefreshInventoryAsync();
+        }
+
+        private async Task RefreshInventoryAsync()
+        {
+            if (!_initialized)
             {
-                await DownloadImageFromWeb(item, gameImageList, item.GetGameSlug());
+                return;
             }
 
-            ListViewGroup group = new ListViewGroup(item.GetGroup(), HorizontalAlignment.Left);
-            group.TitleImageKey = item.GetGameSlug();
-            group.CollapsedState = ListViewGroupCollapsedState.Collapsed;
-            if (inventoryListView.InvokeRequired)
+            if (Interlocked.Exchange(ref _inventoryRefreshInProgress, 1) == 1)
             {
-                inventoryListView.Invoke(new Action(() =>
+                return;
+            }
+
+            try
+            {
+                var inventoryBeforeRefresh = twitchUser.Inventory;
+                await twitchUser.RefreshInventoryAsync();
+
+                // The setter raises PropertyChanged when a new snapshot arrives, which
+                // already triggers LoadInventoryAsync. Only refresh the tree here when
+                // the snapshot did not change (for example, a failed fetch).
+                if (ReferenceEquals(inventoryBeforeRefresh, twitchUser.Inventory))
                 {
-                    inventoryListView.Groups.Add(group);
-                }));
+                    await LoadInventoryAsync();
+                }
             }
-            else
+            catch (Exception ex)
             {
-                inventoryListView.Groups.Add(group);
+                TryAppendLog($"Inventory refresh failed: {ex.Message}");
             }
-
-            return group;
+            finally
+            {
+                Interlocked.Exchange(ref _inventoryRefreshInProgress, 0);
+            }
         }
 
         private async Task LoadInventoryAsync()
         {
-            List<IInventorySystem> inventoryItems = new List<IInventorySystem>();
-            var gameEventDrops = twitchUser.Inventory?.GameEventDropsConnection?
-                        .Edges
-                        .Select(x => x.Node)
-                        .OrderBy(drop => drop.LastAwardedAt)
-                        .Reverse()
-                        .ToList() ?? new List<UserDropReward>();
-            var dropCampaignsInProgress = twitchUser.Inventory?.DropCampaignsInProgress;
-
-            if (dropCampaignsInProgress != null)
+            if (!_initialized)
             {
-                var timeBasedDrops = await Task.Run(() =>
-                {
-                    var itemList = new ConcurrentBag<TimeBasedDrop>();
-
-                    Parallel.ForEach(dropCampaignsInProgress, dropCampaign =>
-                    {
-                        foreach (var timeBasedDrop in dropCampaign.TimeBasedDrops)
-                        {
-                            timeBasedDrop.Game = dropCampaign.Game;
-                            itemList.Add(timeBasedDrop);
-                        }
-                    });
-
-                    return itemList.ToList();
-                });
-
-                inventoryItems.AddRange(timeBasedDrops);
+                return;
             }
 
-            inventoryItems.AddRange(gameEventDrops);
-
-            var oneItemOfEachDistinctSlug = inventoryItems
-                .GroupBy(item => item.GetGameSlug())
-                .Select(group => group.First())
-                .ToList();
-
-            // Create and add groups first
-            var groupTasks = oneItemOfEachDistinctSlug.Select(async inventoryItem =>
+            try
             {
-                return await AddGroup(inventoryItem);
-            });
-
-            var groups = await Task.WhenAll(groupTasks);
-
-            // Create and add items
-            var itemTasks = inventoryItems.Select(async inventoryItem =>
-            {
-                // Download the item's image
-                await DownloadImageFromWeb(inventoryItem, dropsInventoryImageList);
-
-                // Attribute the correct group to the item
-                var group = groups.First(g => g.Header == inventoryItem.GetGroup());
-
-                ListViewItem listViewItem = new ListViewItem()
+                var items = InventoryViewBuilder.Build(twitchUser.Inventory);
+                if (items.Count == 0)
                 {
-                    Group = group,
-                    ImageKey = inventoryItem.Id
-                };
-                listViewItem.SubItems.Add(inventoryItem.GetName());
-                listViewItem.SubItems.Add(inventoryItem.GetStatus());
+                    ShowInventoryMessage("No inventory items yet");
+                    return;
+                }
 
-                return listViewItem;
-            });
-
-            var listViewItemsResult = await Task.WhenAll(itemTasks);
-
-            if (inventoryListView.InvokeRequired)
-            {
-                inventoryListView.Invoke(new Action(() =>
-                {
-                    inventoryListView.BeginUpdate();
-                    inventoryListView.Items.Clear();
-                    inventoryListView.Items.AddRange(listViewItemsResult.ToArray());
-                    inventoryListView.AutoResizeColumn(2, ColumnHeaderAutoResizeStyle.ColumnContent);
-                    inventoryListView.EndUpdate();
-                }));
+                await LoadInventoryImagesAsync(items);
+                UpdateInventoryTree(items);
             }
-            else
+            catch (Exception ex)
             {
-                inventoryListView.BeginUpdate();
-                inventoryListView.Items.Clear();
-                inventoryListView.Items.AddRange(listViewItemsResult.ToArray());
-                inventoryListView.AutoResizeColumn(2, ColumnHeaderAutoResizeStyle.ColumnContent);
-                inventoryListView.EndUpdate();
+                TryAppendLog($"Inventory display failed: {ex.Message}");
+                ShowInventoryMessage("Inventory unavailable");
             }
         }
 
-        private async Task DownloadImageFromWeb(IInventorySystem item, ImageList il, string? slug = null)
+        private async Task LoadInventoryImagesAsync(IReadOnlyList<InventoryViewItem> items)
         {
-            var key = slug ?? item.Id;
-
-            // Check if the image already exists in the ImageList
-            lock (imageListLock)
+            var urls = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var item in items)
             {
-                if (il.Images.ContainsKey(key))
+                if (!string.IsNullOrWhiteSpace(item.GameImageUrl))
                 {
-                    return;
+                    urls.Add(item.GameImageUrl);
+                }
+
+                if (!string.IsNullOrWhiteSpace(item.ImageUrl))
+                {
+                    urls.Add(item.ImageUrl);
                 }
             }
 
-            await Task.Run(async () =>
+            if (urls.Count == 0)
             {
-                using (HttpClient client = new HttpClient())
+                return;
+            }
+
+            await Task.WhenAll(urls.Select(EnsureInventoryImageAsync));
+        }
+
+        private async Task<bool> EnsureInventoryImageAsync(string url)
+        {
+            var imageList = inventoryTreeImageList;
+            if (imageList == null || string.IsNullOrWhiteSpace(url))
+            {
+                return false;
+            }
+
+            try
+            {
+                lock (imageListLock)
                 {
-                    var response = await client.GetAsync(slug != null ? item.GetGameImageUrl(16): item.GetImage());
-                    response.EnsureSuccessStatusCode();
-                    using (var respStream = await response.Content.ReadAsStreamAsync())
+                    if (imageList.Images.ContainsKey(url))
                     {
-                        Bitmap bmp = new Bitmap(respStream);
-                        if (inventoryListView.InvokeRequired)
-                        {
-                            inventoryListView.Invoke(new Action(() =>
-                            {
-                                lock (imageListLock)
-                                {
-                                    il.Images.Add(key, bmp);
-                                }
-                            }));
-                        }
-                        else
-                        {
-                            lock (imageListLock)
-                            {
-                                il.Images.Add(key, bmp);
-                            }
-                        }
+                        return true;
                     }
                 }
+
+                var bytes = await ImageHttpClient.GetByteArrayAsync(url).ConfigureAwait(false);
+                if (bytes.Length == 0)
+                {
+                    return false;
+                }
+
+                using var stream = new MemoryStream(bytes);
+                using var source = new Bitmap(stream);
+                using var image = new Bitmap(source, new Size(24, 24));
+
+                var added = TryRunOnUiThread(() =>
+                {
+                    lock (imageListLock)
+                    {
+                        if (!imageList.Images.ContainsKey(url))
+                        {
+                            imageList.Images.Add(url, new Bitmap(image));
+                        }
+                    }
+                });
+
+                return added && HasInventoryImage(url);
+            }
+            catch (Exception ex)
+            {
+                TryAppendLog($"Inventory image failed ({url}): {ex.Message}");
+                return false;
+            }
+        }
+
+        private bool HasInventoryImage(string url)
+        {
+            var imageList = inventoryTreeImageList;
+            if (imageList == null)
+            {
+                return false;
+            }
+
+            lock (imageListLock)
+            {
+                return imageList.Images.ContainsKey(url);
+            }
+        }
+
+        private string? GetInventoryImageKey(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return null;
+            }
+
+            return HasInventoryImage(url) ? url : null;
+        }
+
+        private void UpdateInventoryTree(IReadOnlyList<InventoryViewItem> items)
+        {
+            TryRunOnUiThread(() =>
+            {
+                if (inventoryTreeView == null)
+                {
+                    return;
+                }
+
+                inventoryTreeView.BeginUpdate();
+                try
+                {
+                    inventoryTreeView.Nodes.Clear();
+
+                    var inProgress = items
+                        .Where(item => item.Section == InventoryViewSection.InProgress)
+                        .ToList();
+                    var earned = items
+                        .Where(item => item.Section == InventoryViewSection.Earned)
+                        .ToList();
+
+                    inventoryTreeView.Nodes.Add(BuildSectionNode($"In progress ({inProgress.Count})", inProgress));
+                    inventoryTreeView.Nodes.Add(BuildSectionNode($"Earned ({earned.Count})", earned));
+                    inventoryTreeView.ExpandAll();
+                }
+                finally
+                {
+                    inventoryTreeView.EndUpdate();
+                }
             });
+        }
+
+        private TreeNode BuildSectionNode(string title, IReadOnlyList<InventoryViewItem> items)
+        {
+            var sectionNode = new TreeNode(title);
+
+            var gameGroups = items
+                .GroupBy(
+                    item => string.IsNullOrWhiteSpace(item.GameName) ? "Unknown game" : item.GameName,
+                    StringComparer.OrdinalIgnoreCase)
+                .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var gameGroup in gameGroups)
+            {
+                var gameItems = gameGroup.ToList();
+                var gameNode = new TreeNode(gameGroup.Key);
+                var gameImageKey = GetInventoryImageKey(
+                    gameItems.Select(item => item.GameImageUrl).FirstOrDefault(url => !string.IsNullOrWhiteSpace(url)));
+                ApplyImageKey(gameNode, gameImageKey);
+
+                var campaignGroups = gameItems
+                    .GroupBy(
+                        item => string.IsNullOrWhiteSpace(item.CampaignId)
+                            ? $"name:{item.CampaignName}"
+                            : $"id:{item.CampaignId}",
+                        StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(group => group.First().CampaignName, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var campaignGroup in campaignGroups)
+                {
+                    var campaignItems = campaignGroup.ToList();
+                    var campaignLevelItem = campaignItems.FirstOrDefault(item => item.IsCampaignLevel);
+                    var campaignName = string.IsNullOrWhiteSpace(campaignItems[0].CampaignName)
+                        ? "Unknown campaign"
+                        : campaignItems[0].CampaignName;
+                    var endsAt = campaignItems
+                        .Select(item => item.EndsAt)
+                        .FirstOrDefault(value => value.HasValue);
+
+                    var campaignText = campaignName;
+                    if (endsAt.HasValue)
+                    {
+                        campaignText += $"  (ends {FormatInventoryDate(endsAt.Value)})";
+                    }
+
+                    if (campaignLevelItem != null && !string.IsNullOrWhiteSpace(campaignLevelItem.StatusText))
+                    {
+                        campaignText += $"  {campaignLevelItem.StatusText}";
+                    }
+
+                    var campaignNode = new TreeNode(campaignText)
+                    {
+                        ToolTipText = BuildCampaignToolTip(campaignItems, campaignLevelItem, endsAt)
+                    };
+                    ApplyImageKey(campaignNode, GetInventoryImageKey(campaignLevelItem?.ImageUrl) ?? gameImageKey);
+
+                    var dropItems = campaignItems
+                        .Where(item => !item.IsCampaignLevel)
+                        .OrderBy(item => item.RequiredMinutes)
+                        .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var drop in dropItems)
+                    {
+                        var dropText = string.IsNullOrWhiteSpace(drop.StatusText)
+                            ? drop.Name
+                            : $"{drop.Name}  {drop.StatusText}";
+                        var dropNode = new TreeNode(dropText)
+                        {
+                            ToolTipText = BuildDropToolTip(drop)
+                        };
+                        ApplyImageKey(dropNode, GetInventoryImageKey(drop.ImageUrl));
+                        campaignNode.Nodes.Add(dropNode);
+                    }
+
+                    gameNode.Nodes.Add(campaignNode);
+                }
+
+                sectionNode.Nodes.Add(gameNode);
+            }
+
+            return sectionNode;
+        }
+
+        private static string BuildCampaignToolTip(
+            IReadOnlyList<InventoryViewItem> campaignItems,
+            InventoryViewItem? campaignLevelItem,
+            DateTime? endsAt)
+        {
+            var first = campaignItems[0];
+            var lines = new List<string>
+            {
+                $"Game: {first.GameName}",
+                $"Campaign: {first.CampaignName}"
+            };
+
+            if (endsAt.HasValue)
+            {
+                lines.Add($"Ends: {FormatInventoryDateTime(endsAt.Value)}");
+            }
+
+            if (campaignLevelItem != null)
+            {
+                lines.Add($"Progress: {BuildProgressText(campaignLevelItem)}");
+                lines.Add($"Status: {campaignLevelItem.StatusText}");
+            }
+            else
+            {
+                lines.Add($"Drops: {campaignItems.Count(item => !item.IsCampaignLevel)}");
+            }
+
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        private static string BuildDropToolTip(InventoryViewItem item)
+        {
+            var lines = new List<string>
+            {
+                $"Game: {item.GameName}",
+                $"Campaign: {item.CampaignName}"
+            };
+
+            if (item.EndsAt.HasValue)
+            {
+                lines.Add($"Ends: {FormatInventoryDateTime(item.EndsAt.Value)}");
+            }
+
+            lines.Add($"Progress: {BuildProgressText(item)}");
+            lines.Add($"Status: {item.StatusText}");
+
+            if (item.LastAwardedAt.HasValue)
+            {
+                lines.Add($"Last awarded: {FormatInventoryDateTime(item.LastAwardedAt.Value)}");
+            }
+
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        private static string BuildProgressText(InventoryViewItem item)
+        {
+            if (item.RequiredMinutes > 0)
+            {
+                return $"{item.CurrentMinutes}/{item.RequiredMinutes} min";
+            }
+
+            return item.CurrentMinutes > 0 ? $"{item.CurrentMinutes} min" : "n/a";
+        }
+
+        private static string FormatInventoryDate(DateTime value)
+        {
+            return value.ToLocalTime().ToString("yyyy-MM-dd");
+        }
+
+        private static string FormatInventoryDateTime(DateTime value)
+        {
+            return value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+        }
+
+        private static void ApplyImageKey(TreeNode node, string? imageKey)
+        {
+            if (string.IsNullOrEmpty(imageKey))
+            {
+                return;
+            }
+
+            node.ImageKey = imageKey;
+            node.SelectedImageKey = imageKey;
+        }
+
+        private void ShowInventoryMessage(string message)
+        {
+            try
+            {
+                TryRunOnUiThread(() =>
+                {
+                    if (inventoryTreeView == null)
+                    {
+                        return;
+                    }
+
+                    inventoryTreeView.BeginUpdate();
+                    try
+                    {
+                        inventoryTreeView.Nodes.Clear();
+                        inventoryTreeView.Nodes.Add(new TreeNode(message));
+                    }
+                    finally
+                    {
+                        inventoryTreeView.EndUpdate();
+                    }
+                });
+            }
+            catch
+            {
+                // The control may already be disposed.
+            }
+        }
+
+        private bool TryRunOnUiThread(Action action)
+        {
+            var tree = inventoryTreeView;
+            if (tree == null || tree.IsDisposed || !tree.IsHandleCreated)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (tree.InvokeRequired)
+                {
+                    tree.Invoke(action);
+                }
+                else
+                {
+                    action();
+                }
+
+                return true;
+            }
+            catch (ObjectDisposedException)
+            {
+                return false;
+            }
+        }
+
+        private void TryAppendLog(string message)
+        {
+            try
+            {
+                AppendLog(message);
+            }
+            catch
+            {
+                // Logging must never break inventory refresh.
+            }
         }
 
         private void ReloadButton_Click(object sender, EventArgs e)
