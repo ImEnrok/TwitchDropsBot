@@ -514,6 +514,86 @@ public class InventoryViewBuilderTests
         var item = Assert.Single(InventoryViewBuilder.Build(inventory));
 
         Assert.Equal("Unknown campaign", item.CampaignName);
+        Assert.Equal("Earned rewards", item.GameName);
+    }
+
+    [Fact]
+    public void Build_EarnedCampaignWithoutDetails_UsesCampaignNameLookup()
+    {
+        var inventory = new Inventory
+        {
+            EarnedDropRewards = new EarnedDropRewardConnection
+            {
+                Edges = new List<EarnedDropRewardEdge>
+                {
+                    new()
+                    {
+                        Node = new EarnedDropReward
+                        {
+                            Id = "earned-lookup",
+                            Status = "CLAIMED",
+                            Item = new DropsReward { Name = "Lookup Reward" },
+                            Campaign = new DropsCampaign
+                            {
+                                Id = "lookup-campaign",
+                                Name = null!,
+                                BrandName = null!,
+                                Game = null!
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        var campaignNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["LOOKUP-CAMPAIGN"] = "2026 Grand Finals I"
+        };
+
+        var item = Assert.Single(InventoryViewBuilder.Build(inventory, campaignNames));
+
+        Assert.Equal("2026 Grand Finals I", item.CampaignName);
+        Assert.Equal("Earned rewards", item.GameName);
+        Assert.Equal("lookup-campaign", item.CampaignId);
+    }
+
+    [Fact]
+    public void Build_EarnedCampaignWithoutLookupMatch_FallsBackToUnknownCampaign()
+    {
+        var inventory = new Inventory
+        {
+            EarnedDropRewards = new EarnedDropRewardConnection
+            {
+                Edges = new List<EarnedDropRewardEdge>
+                {
+                    new()
+                    {
+                        Node = new EarnedDropReward
+                        {
+                            Id = "earned-no-match",
+                            Status = "CLAIMED",
+                            Item = new DropsReward { Name = "No Match Reward" },
+                            Campaign = new DropsCampaign
+                            {
+                                Id = "no-match-campaign",
+                                Name = null!,
+                                BrandName = null!,
+                                Game = null!
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        var campaignNames = new Dictionary<string, string>
+        {
+            ["some-other-campaign"] = "Some Other Campaign"
+        };
+
+        var item = Assert.Single(InventoryViewBuilder.Build(inventory, campaignNames));
+
+        Assert.Equal("Unknown campaign", item.CampaignName);
+        Assert.Equal("Earned rewards", item.GameName);
     }
 
     [Fact]

@@ -30,7 +30,9 @@ public static class InventoryViewBuilder
 {
     private static readonly StringComparer NameComparer = StringComparer.OrdinalIgnoreCase;
 
-    public static IReadOnlyList<InventoryViewItem> Build(Inventory? inventory)
+    public static IReadOnlyList<InventoryViewItem> Build(
+        Inventory? inventory,
+        IReadOnlyDictionary<string, string>? campaignNames = null)
     {
         if (inventory is null)
         {
@@ -39,7 +41,7 @@ public static class InventoryViewBuilder
 
         var items = new List<InventoryViewItem>();
         AddInProgressItems(inventory, items);
-        AddEarnedItems(inventory, items);
+        AddEarnedItems(inventory, campaignNames, items);
 
         return items
             .OrderBy(item => item.Section)
@@ -130,7 +132,10 @@ public static class InventoryViewBuilder
         }
     }
 
-    private static void AddEarnedItems(Inventory inventory, List<InventoryViewItem> items)
+    private static void AddEarnedItems(
+        Inventory inventory,
+        IReadOnlyDictionary<string, string>? campaignNames,
+        List<InventoryViewItem> items)
     {
         var earnedItems = new List<InventoryViewItem>();
 
@@ -147,8 +152,15 @@ public static class InventoryViewBuilder
 
                 var campaign = node.Campaign;
                 var game = campaign?.Game;
-                var gameName = FirstNonEmpty(game?.DisplayName, game?.Name, campaign?.BrandName) ?? "Unknown game";
-                var campaignName = FirstNonEmpty(campaign?.Name, campaign?.BrandName, game?.DisplayName, game?.Name)
+                var campaignId = FirstNonEmpty(campaign?.Id);
+                var gameName = FirstNonEmpty(game?.DisplayName, game?.Name, campaign?.BrandName)
+                    ?? "Earned rewards";
+                var campaignName = FirstNonEmpty(
+                        campaign?.Name,
+                        campaign?.BrandName,
+                        LookupCampaignName(campaignNames, campaignId),
+                        game?.DisplayName,
+                        game?.Name)
                     ?? "Unknown campaign";
                 var gameImageUrl = FirstNonEmpty(game?.BoxArtUrl);
                 var isClaimed = string.Equals(node.Status, "CLAIMED", StringComparison.OrdinalIgnoreCase);
@@ -160,7 +172,7 @@ public static class InventoryViewBuilder
                     GameName = gameName,
                     GameSlug = FirstNonEmpty(game?.Slug),
                     CampaignName = campaignName,
-                    CampaignId = FirstNonEmpty(campaign?.Id),
+                    CampaignId = campaignId,
                     IsClaimed = isClaimed,
                     IsCampaignLevel = false,
                     Section = InventoryViewSection.Earned,
@@ -275,6 +287,30 @@ public static class InventoryViewBuilder
         }
 
         return "In progress";
+    }
+
+    private static string? LookupCampaignName(IReadOnlyDictionary<string, string>? campaignNames, string? campaignId)
+    {
+        if (campaignNames is null || string.IsNullOrWhiteSpace(campaignId))
+        {
+            return null;
+        }
+
+        if (campaignNames.TryGetValue(campaignId, out var name) && !string.IsNullOrWhiteSpace(name))
+        {
+            return name;
+        }
+
+        foreach (var pair in campaignNames)
+        {
+            if (string.Equals(pair.Key, campaignId, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(pair.Value))
+            {
+                return pair.Value;
+            }
+        }
+
+        return null;
     }
 
     private static string? FirstNonEmpty(params string?[] values)
