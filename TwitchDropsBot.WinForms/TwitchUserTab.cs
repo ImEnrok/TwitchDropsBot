@@ -542,6 +542,7 @@ namespace TwitchDropsBot.WinForms
         private TreeNode BuildSectionNode(string title, IReadOnlyList<InventoryViewItem> items)
         {
             var sectionNode = new TreeNode(title);
+            ApplyImageKey(sectionNode, null);
 
             var gameGroups = items
                 .GroupBy(
@@ -708,6 +709,10 @@ namespace TwitchDropsBot.WinForms
         {
             if (string.IsNullOrEmpty(imageKey))
             {
+                node.ImageKey = string.Empty;
+                node.SelectedImageKey = string.Empty;
+                node.ImageIndex = -1;
+                node.SelectedImageIndex = -1;
                 return;
             }
 
