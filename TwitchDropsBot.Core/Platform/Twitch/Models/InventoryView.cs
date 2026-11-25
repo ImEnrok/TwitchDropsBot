@@ -74,7 +74,7 @@ public static class InventoryViewBuilder
             var endsAt = campaign.EndAt ?? campaign.EndsAt;
 
             var drops = campaign.TimeBasedDrops;
-            if (drops is null || drops.Count == 0)
+            if (drops is null || drops.All(drop => drop is null))
             {
                 items.Add(new InventoryViewItem
                 {
@@ -106,7 +106,7 @@ public static class InventoryViewBuilder
                 var requiredMinutes = drop.RequiredMinutesWatched;
                 var isClaimed = drop.Self is not null
                     ? drop.Self.IsClaimed
-                    : AnyBenefitClaimed(drop.BenefitEdges);
+                    : AllBenefitsClaimed(drop.BenefitEdges);
 
                 items.Add(new InventoryViewItem
                 {
@@ -195,7 +195,7 @@ public static class InventoryViewBuilder
                     CampaignName = "Game event drops",
                     IsCampaignLevel = false,
                     Section = InventoryViewSection.Earned,
-                    LastAwardedAt = node.LastAwardedAt,
+                    LastAwardedAt = node.LastAwardedAt == default ? null : node.LastAwardedAt,
                     ImageUrl = FirstNonEmpty(node.ImageURL),
                     StatusText = status
                 });
@@ -232,22 +232,30 @@ public static class InventoryViewBuilder
         return null;
     }
 
-    private static bool AnyBenefitClaimed(List<DropBenefitEdge>? edges)
+    private static bool AllBenefitsClaimed(List<DropBenefitEdge>? edges)
     {
         if (edges is null)
         {
             return false;
         }
 
+        var hasBenefit = false;
         foreach (var edge in edges)
         {
-            if (edge?.Benefit is { IsClaimed: true })
+            var benefit = edge?.Benefit;
+            if (benefit is null)
             {
-                return true;
+                continue;
+            }
+
+            hasBenefit = true;
+            if (!benefit.IsClaimed)
+            {
+                return false;
             }
         }
 
-        return false;
+        return hasBenefit;
     }
 
     private static string BuildInProgressStatus(bool isClaimed, int currentMinutes, int requiredMinutes)
@@ -257,9 +265,14 @@ public static class InventoryViewBuilder
             return "Claimed";
         }
 
-        return requiredMinutes > 0
-            ? $"{currentMinutes}/{requiredMinutes} min"
-            : "In progress";
+        if (requiredMinutes > 0)
+        {
+            return currentMinutes >= requiredMinutes
+                ? "Ready to claim"
+                : $"{currentMinutes}/{requiredMinutes} min";
+        }
+
+        return "In progress";
     }
 
     private static string? FirstNonEmpty(params string?[] values)

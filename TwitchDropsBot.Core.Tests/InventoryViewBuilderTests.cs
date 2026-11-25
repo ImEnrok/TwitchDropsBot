@@ -110,6 +110,103 @@ public class InventoryViewBuilderTests
     }
 
     [Fact]
+    public void Build_NullSelfWithMixedBenefitClaims_IsNotClaimed()
+    {
+        var drop = new TimeBasedDrop
+        {
+            Id = "drop-mixed-claims",
+            Name = "Mixed Claims Drop",
+            RequiredMinutesWatched = 10,
+            Self = null,
+            BenefitEdges = new List<DropBenefitEdge>
+            {
+                new() { Benefit = new DropBenefit { Name = "Claimed Benefit", IsClaimed = true } },
+                new() { Benefit = new DropBenefit { Name = "Unclaimed Benefit", IsClaimed = false } }
+            }
+        };
+        var campaign = new DropCampaign
+        {
+            Id = "campaign-mixed-claims",
+            Name = "Campaign",
+            Game = new Game { DisplayName = "Game" },
+            TimeBasedDrops = new List<TimeBasedDrop> { drop }
+        };
+        var inventory = new Inventory
+        {
+            DropCampaignsInProgress = new List<DropCampaign> { campaign }
+        };
+
+        var item = Assert.Single(InventoryViewBuilder.Build(inventory));
+
+        Assert.False(item.IsClaimed);
+        Assert.Equal("0/10 min", item.StatusText);
+    }
+
+    [Fact]
+    public void Build_NullSelfWithAllBenefitsClaimed_IsClaimed()
+    {
+        var drop = new TimeBasedDrop
+        {
+            Id = "drop-all-claimed",
+            Name = "All Claimed Drop",
+            RequiredMinutesWatched = 10,
+            Self = null,
+            BenefitEdges = new List<DropBenefitEdge>
+            {
+                new() { Benefit = new DropBenefit { Name = "First Benefit", IsClaimed = true } },
+                new() { Benefit = null },
+                new() { Benefit = new DropBenefit { Name = "Second Benefit", IsClaimed = true } }
+            }
+        };
+        var campaign = new DropCampaign
+        {
+            Id = "campaign-all-claimed",
+            Name = "Campaign",
+            Game = new Game { DisplayName = "Game" },
+            TimeBasedDrops = new List<TimeBasedDrop> { drop }
+        };
+        var inventory = new Inventory
+        {
+            DropCampaignsInProgress = new List<DropCampaign> { campaign }
+        };
+
+        var item = Assert.Single(InventoryViewBuilder.Build(inventory));
+
+        Assert.True(item.IsClaimed);
+        Assert.Equal("Claimed", item.StatusText);
+    }
+
+    [Fact]
+    public void Build_NullBenefitEdges_DoesNotThrowAndUsesDropFallback()
+    {
+        var drop = new TimeBasedDrop
+        {
+            Id = "drop-null-benefits",
+            Name = "Null Benefits Drop",
+            RequiredMinutesWatched = 10,
+            Self = null,
+            BenefitEdges = null!
+        };
+        var campaign = new DropCampaign
+        {
+            Id = "campaign-null-benefits",
+            Name = "Campaign",
+            Game = new Game { DisplayName = "Game" },
+            TimeBasedDrops = new List<TimeBasedDrop> { drop }
+        };
+        var inventory = new Inventory
+        {
+            DropCampaignsInProgress = new List<DropCampaign> { campaign }
+        };
+
+        var item = Assert.Single(InventoryViewBuilder.Build(inventory));
+
+        Assert.Equal("Null Benefits Drop", item.Name);
+        Assert.False(item.IsClaimed);
+        Assert.Equal("0/10 min", item.StatusText);
+    }
+
+    [Fact]
     public void Build_CampaignWithoutTimeBasedDrops_EmitsCampaignLevelItem()
     {
         var campaign = new DropCampaign
@@ -135,12 +232,95 @@ public class InventoryViewBuilderTests
     }
 
     [Fact]
+    public void Build_TimeBasedDropsContainsOnlyNullElements_EmitsCampaignLevelItem()
+    {
+        var campaign = new DropCampaign
+        {
+            Id = "campaign-null-drops",
+            Name = "Null Drops Campaign",
+            Game = new Game { DisplayName = "Game" },
+            TimeBasedDrops = new List<TimeBasedDrop> { null!, null! }
+        };
+        var inventory = new Inventory
+        {
+            DropCampaignsInProgress = new List<DropCampaign> { campaign }
+        };
+
+        var item = Assert.Single(InventoryViewBuilder.Build(inventory));
+
+        Assert.True(item.IsCampaignLevel);
+        Assert.Equal("Null Drops Campaign", item.Name);
+        Assert.Equal("Campaign in progress", item.StatusText);
+    }
+
+    [Fact]
+    public void Build_NullTimeBasedDrops_EmitsCampaignLevelItem()
+    {
+        var campaign = new DropCampaign
+        {
+            Id = "campaign-null-drop-list",
+            Name = "Null Drop List Campaign",
+            Game = new Game { DisplayName = "Game" },
+            TimeBasedDrops = null!
+        };
+        var inventory = new Inventory
+        {
+            DropCampaignsInProgress = new List<DropCampaign> { campaign }
+        };
+
+        var item = Assert.Single(InventoryViewBuilder.Build(inventory));
+
+        Assert.True(item.IsCampaignLevel);
+        Assert.Equal("Null Drop List Campaign", item.Name);
+        Assert.Equal("Campaign in progress", item.StatusText);
+    }
+
+    [Fact]
     public void Build_NullEarnedDropRewards_DoesNotThrow()
     {
         var inventory = new Inventory
         {
             DropCampaignsInProgress = new List<DropCampaign>(),
             EarnedDropRewards = null
+        };
+
+        var items = InventoryViewBuilder.Build(inventory);
+
+        Assert.Empty(items);
+    }
+
+    [Fact]
+    public void Build_NullDropCampaignsInProgress_DoesNotThrowAndReturnsEmpty()
+    {
+        var inventory = new Inventory
+        {
+            DropCampaignsInProgress = null!
+        };
+
+        var items = InventoryViewBuilder.Build(inventory);
+
+        Assert.Empty(items);
+    }
+
+    [Fact]
+    public void Build_NullEarnedDropRewardsEdges_DoesNotThrowAndReturnsEmpty()
+    {
+        var inventory = new Inventory
+        {
+            EarnedDropRewards = new EarnedDropRewardConnection { Edges = null! }
+        };
+
+        var items = InventoryViewBuilder.Build(inventory);
+
+        Assert.Empty(items);
+    }
+
+    [Fact]
+    public void Build_NullGameEventDropsEdges_DoesNotThrowAndReturnsEmpty()
+    {
+        var inventory = new Inventory
+        {
+            GameEventDropsConnection = new UserDropRewardConnection { Edges = null! }
         };
 
         var items = InventoryViewBuilder.Build(inventory);
@@ -169,6 +349,47 @@ public class InventoryViewBuilderTests
         var item = Assert.Single(items);
         Assert.True(item.IsCampaignLevel);
         Assert.Equal("Null Drops", item.Name);
+    }
+
+    [Fact]
+    public void Build_NullElementsInsideCollections_AreSkipped()
+    {
+        var validDrop = new TimeBasedDrop
+        {
+            Id = "drop-valid",
+            Name = "Valid Drop",
+            RequiredMinutesWatched = 10,
+            BenefitEdges = new List<DropBenefitEdge>
+            {
+                null!,
+                new() { Benefit = new DropBenefit { Name = "Valid Benefit" } }
+            }
+        };
+        var campaign = new DropCampaign
+        {
+            Id = "campaign-valid",
+            Name = "Valid Campaign",
+            Game = new Game { DisplayName = "Game" },
+            TimeBasedDrops = new List<TimeBasedDrop> { null!, validDrop }
+        };
+        var inventory = new Inventory
+        {
+            DropCampaignsInProgress = new List<DropCampaign> { null!, campaign },
+            EarnedDropRewards = new EarnedDropRewardConnection
+            {
+                Edges = new List<EarnedDropRewardEdge> { null!, new() { Node = null! } }
+            },
+            GameEventDropsConnection = new UserDropRewardConnection
+            {
+                Edges = new List<UserDropRewardEdge> { null!, new() { Node = null! } }
+            }
+        };
+
+        var item = Assert.Single(InventoryViewBuilder.Build(inventory));
+
+        Assert.Equal("Valid Benefit", item.Name);
+        Assert.Equal("Valid Campaign", item.CampaignName);
+        Assert.Equal("Game", item.GameName);
     }
 
     [Fact]
@@ -258,6 +479,44 @@ public class InventoryViewBuilderTests
     }
 
     [Fact]
+    public void Build_ProgressMeetsRequirement_StatusIsReadyToClaim()
+    {
+        var drop = new TimeBasedDrop
+        {
+            Id = "drop-complete",
+            Name = "Completed Progress Drop",
+            RequiredMinutesWatched = 60,
+            Self = new TimeBasedDropSelfEdge
+            {
+                CurrentMinutesWatched = 75,
+                IsClaimed = false
+            },
+            BenefitEdges = new List<DropBenefitEdge>
+            {
+                new() { Benefit = new DropBenefit { Name = "Reward" } }
+            }
+        };
+        var campaign = new DropCampaign
+        {
+            Id = "campaign-complete",
+            Name = "Campaign",
+            Game = new Game { DisplayName = "Game" },
+            TimeBasedDrops = new List<TimeBasedDrop> { drop }
+        };
+        var inventory = new Inventory
+        {
+            DropCampaignsInProgress = new List<DropCampaign> { campaign }
+        };
+
+        var item = Assert.Single(InventoryViewBuilder.Build(inventory));
+
+        Assert.False(item.IsClaimed);
+        Assert.Equal(75, item.CurrentMinutes);
+        Assert.Equal(60, item.RequiredMinutes);
+        Assert.Equal("Ready to claim", item.StatusText);
+    }
+
+    [Fact]
     public void Build_GameEventDrop_MapsEarnedSectionConnectedStatusAndCountSuffix()
     {
         var awardedAt = new DateTime(2026, 11, 20, 8, 30, 0, DateTimeKind.Utc);
@@ -321,6 +580,35 @@ public class InventoryViewBuilderTests
         var item = Assert.Single(InventoryViewBuilder.Build(inventory));
 
         Assert.Equal("Not connected", item.StatusText);
+    }
+
+    [Fact]
+    public void Build_GameEventDropDefaultLastAwardedAt_MapsToNull()
+    {
+        var inventory = new Inventory
+        {
+            GameEventDropsConnection = new UserDropRewardConnection
+            {
+                Edges = new List<UserDropRewardEdge>
+                {
+                    new()
+                    {
+                        Node = new UserDropReward
+                        {
+                            Id = "game-event-default-date",
+                            Name = "Never Awarded",
+                            IsConnected = true,
+                            TotalCount = 1,
+                            LastAwardedAt = default
+                        }
+                    }
+                }
+            }
+        };
+
+        var item = Assert.Single(InventoryViewBuilder.Build(inventory));
+
+        Assert.Null(item.LastAwardedAt);
     }
 
     [Fact]
