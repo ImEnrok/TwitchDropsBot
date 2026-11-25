@@ -21,6 +21,7 @@ namespace TwitchDropsBot.WinForms
         private ImageList? inventoryTreeImageList;
         private bool _initialized;
         private int _inventoryRefreshInProgress;
+        private int _inventoryLoadGeneration;
 
 
         public TwitchUserTab(TwitchUser twitchUser)
@@ -53,7 +54,7 @@ namespace TwitchDropsBot.WinForms
 
             _initialized = true;
             inventoryRefreshTimer?.Start();
-            VisibleChanged += TwitchUserTab_VisibleChanged;
+            currentTabPage.VisibleChanged += TwitchUserTab_VisibleChanged;
 
             if (inventoryTreeView != null)
             {
@@ -87,9 +88,6 @@ namespace TwitchDropsBot.WinForms
             {
                 if (twitchUser?.Inventory != null)
                 {
-                    // twitchUser.Logger.Information("Inventory requested");
-                    TryAppendLog("Inventory requested");
-
                     try
                     {
                         await LoadInventoryAsync();
@@ -182,7 +180,7 @@ namespace TwitchDropsBot.WinForms
                 FullRowSelect = true,
                 HideSelection = false,
                 ShowNodeToolTips = true,
-                ItemHeight = 22,
+                ItemHeight = 28,
                 ImageList = inventoryTreeImageList,
                 RightToLeft = RightToLeft.No,
                 TabIndex = 0
@@ -213,14 +211,14 @@ namespace TwitchDropsBot.WinForms
 
             inventoryRefreshTimer = new System.Windows.Forms.Timer(components)
             {
-                Interval = 60_000
+                Interval = 300_000
             };
             inventoryRefreshTimer.Tick += InventoryRefreshTimer_Tick;
         }
 
         private void InventoryTreeView_HandleCreated(object? sender, EventArgs e)
         {
-            if (_initialized && Visible)
+            if (IsInventoryTabVisible())
             {
                 _ = RefreshInventoryAsync();
             }
@@ -228,17 +226,30 @@ namespace TwitchDropsBot.WinForms
 
         private async void InventoryRefreshTimer_Tick(object? sender, EventArgs e)
         {
+            if (!IsInventoryTabVisible())
+            {
+                return;
+            }
+
             await RefreshInventoryAsync();
         }
 
         private void TwitchUserTab_VisibleChanged(object? sender, EventArgs e)
         {
-            if (!_initialized || !Visible)
+            if (!IsInventoryTabVisible())
             {
                 return;
             }
 
             _ = RefreshInventoryAsync();
+        }
+
+        private bool IsInventoryTabVisible()
+        {
+            return _initialized
+                && !currentTabPage.IsDisposed
+                && !currentTabPage.Disposing
+                && currentTabPage.Visible;
         }
 
         private async void InventoryRefreshButton_Click(object? sender, EventArgs e)
@@ -257,6 +268,8 @@ namespace TwitchDropsBot.WinForms
             {
                 return;
             }
+
+            SetInventoryRefreshButtonEnabled(false);
 
             try
             {
@@ -277,8 +290,20 @@ namespace TwitchDropsBot.WinForms
             }
             finally
             {
+                SetInventoryRefreshButtonEnabled(true);
                 Interlocked.Exchange(ref _inventoryRefreshInProgress, 0);
             }
+        }
+
+        private void SetInventoryRefreshButtonEnabled(bool enabled)
+        {
+            var button = inventoryRefreshButton;
+            if (button == null || button.IsDisposed || button.Disposing)
+            {
+                return;
+            }
+
+            button.Enabled = enabled;
         }
 
         private async Task LoadInventoryAsync()
@@ -288,23 +313,51 @@ namespace TwitchDropsBot.WinForms
                 return;
             }
 
+            var generation = Interlocked.Increment(ref _inventoryLoadGeneration);
+
             try
             {
                 var items = InventoryViewBuilder.Build(twitchUser.Inventory);
                 if (items.Count == 0)
                 {
-                    ShowInventoryMessage("No inventory items yet");
+                    if (IsCurrentInventoryLoad(generation))
+                    {
+                        ShowInventoryMessage("No inventory items yet");
+                    }
+
                     return;
                 }
 
                 await LoadInventoryImagesAsync(items);
-                UpdateInventoryTree(items);
+                if (IsCurrentInventoryLoad(generation))
+                {
+                    UpdateInventoryTree(items);
+                }
             }
             catch (Exception ex)
             {
                 TryAppendLog($"Inventory display failed: {ex.Message}");
-                ShowInventoryMessage("Inventory unavailable");
+                if (IsCurrentInventoryLoad(generation))
+                {
+                    ShowInventoryMessage("Inventory unavailable");
+                }
             }
+        }
+
+        private bool IsCurrentInventoryLoad(int generation)
+        {
+            if (generation != Volatile.Read(ref _inventoryLoadGeneration) || IsDisposed)
+            {
+                return false;
+            }
+
+            if (currentTabPage.IsDisposed || currentTabPage.Disposing)
+            {
+                return false;
+            }
+
+            var tree = inventoryTreeView;
+            return tree == null || (!tree.IsDisposed && !tree.Disposing);
         }
 
         private async Task LoadInventoryImagesAsync(IReadOnlyList<InventoryViewItem> items)
@@ -365,6 +418,11 @@ namespace TwitchDropsBot.WinForms
                     {
                         if (!imageList.Images.ContainsKey(url))
                         {
+                            if (imageList.Images.Count > 512)
+                            {
+                                imageList.Images.Clear();
+                            }
+
                             imageList.Images.Add(url, new Bitmap(image));
                         }
                     }
@@ -582,11 +640,21 @@ namespace TwitchDropsBot.WinForms
 
         private static string FormatInventoryDate(DateTime value)
         {
+            if (value == DateTime.MinValue)
+            {
+                return "unknown";
+            }
+
             return value.ToLocalTime().ToString("yyyy-MM-dd");
         }
 
         private static string FormatInventoryDateTime(DateTime value)
         {
+            if (value == DateTime.MinValue)
+            {
+                return "unknown";
+            }
+
             return value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
         }
 
@@ -633,7 +701,7 @@ namespace TwitchDropsBot.WinForms
         private bool TryRunOnUiThread(Action action)
         {
             var tree = inventoryTreeView;
-            if (tree == null || tree.IsDisposed || !tree.IsHandleCreated)
+            if (tree == null || tree.IsDisposed || tree.Disposing || !tree.IsHandleCreated)
             {
                 return false;
             }
@@ -652,6 +720,14 @@ namespace TwitchDropsBot.WinForms
                 return true;
             }
             catch (ObjectDisposedException)
+            {
+                return false;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+            catch (InvalidAsynchronousStateException)
             {
                 return false;
             }
