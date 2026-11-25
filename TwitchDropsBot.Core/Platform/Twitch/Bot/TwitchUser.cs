@@ -156,6 +156,8 @@ public class TwitchUser : BotUser
         await _baseBot.StartBot();
     }
 
+    public Task RefreshInventoryAsync() => _baseBot.RefreshInventoryAsync();
+
     public override void Close()
     {
         WatchManager.Close();
