@@ -147,7 +147,9 @@ public static class InventoryViewBuilder
 
                 var campaign = node.Campaign;
                 var game = campaign?.Game;
-                var gameName = FirstNonEmpty(game?.DisplayName, game?.Name) ?? "Unknown game";
+                var gameName = FirstNonEmpty(game?.DisplayName, game?.Name, campaign?.BrandName) ?? "Unknown game";
+                var campaignName = FirstNonEmpty(campaign?.Name, campaign?.BrandName, game?.DisplayName, game?.Name)
+                    ?? "Unknown campaign";
                 var gameImageUrl = FirstNonEmpty(game?.BoxArtUrl);
                 var isClaimed = string.Equals(node.Status, "CLAIMED", StringComparison.OrdinalIgnoreCase);
 
@@ -157,7 +159,7 @@ public static class InventoryViewBuilder
                     Name = FirstNonEmpty(node.Item?.Name) ?? "Unknown reward",
                     GameName = gameName,
                     GameSlug = FirstNonEmpty(game?.Slug),
-                    CampaignName = FirstNonEmpty(campaign?.Name) ?? "Unknown campaign",
+                    CampaignName = campaignName,
                     CampaignId = FirstNonEmpty(campaign?.Id),
                     IsClaimed = isClaimed,
                     IsCampaignLevel = false,

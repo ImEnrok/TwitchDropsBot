@@ -450,6 +450,107 @@ public class InventoryViewBuilderTests
     }
 
     [Fact]
+    public void Build_EarnedCampaignWithoutName_UsesBrandNameAsCampaignName()
+    {
+        var inventory = new Inventory
+        {
+            EarnedDropRewards = new EarnedDropRewardConnection
+            {
+                Edges = new List<EarnedDropRewardEdge>
+                {
+                    new()
+                    {
+                        Node = new EarnedDropReward
+                        {
+                            Id = "earned-brand",
+                            Status = "CLAIMED",
+                            Item = new DropsReward { Name = "Brand Reward" },
+                            Campaign = new DropsCampaign
+                            {
+                                Id = "brand-campaign",
+                                Name = null!,
+                                BrandName = "FragPunk"
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        var item = Assert.Single(InventoryViewBuilder.Build(inventory));
+
+        Assert.Equal("FragPunk", item.CampaignName);
+    }
+
+    [Fact]
+    public void Build_EarnedCampaignWithoutNameBrandOrGame_FallsBackToUnknownCampaign()
+    {
+        var inventory = new Inventory
+        {
+            EarnedDropRewards = new EarnedDropRewardConnection
+            {
+                Edges = new List<EarnedDropRewardEdge>
+                {
+                    new()
+                    {
+                        Node = new EarnedDropReward
+                        {
+                            Id = "earned-unknown",
+                            Status = "CLAIMED",
+                            Item = new DropsReward { Name = "Unknown Reward" },
+                            Campaign = new DropsCampaign
+                            {
+                                Id = "unknown-campaign",
+                                Name = null!,
+                                BrandName = null!,
+                                Game = null!
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        var item = Assert.Single(InventoryViewBuilder.Build(inventory));
+
+        Assert.Equal("Unknown campaign", item.CampaignName);
+    }
+
+    [Fact]
+    public void Build_EarnedCampaignWithoutGame_UsesBrandNameAsGameName()
+    {
+        var inventory = new Inventory
+        {
+            EarnedDropRewards = new EarnedDropRewardConnection
+            {
+                Edges = new List<EarnedDropRewardEdge>
+                {
+                    new()
+                    {
+                        Node = new EarnedDropReward
+                        {
+                            Id = "earned-brand-game",
+                            Status = "CLAIMED",
+                            Item = new DropsReward { Name = "Brand Game Reward" },
+                            Campaign = new DropsCampaign
+                            {
+                                Id = "brand-game-campaign",
+                                Name = "Brand Game Campaign",
+                                BrandName = "FragPunk",
+                                Game = null!
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        var item = Assert.Single(InventoryViewBuilder.Build(inventory));
+
+        Assert.Equal("FragPunk", item.GameName);
+    }
+
+    [Fact]
     public void Build_EarnedRewardEdgeNotClaimed_StatusIsReadyToClaim()
     {
         var inventory = new Inventory
