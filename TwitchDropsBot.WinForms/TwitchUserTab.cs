@@ -10,6 +10,8 @@ namespace TwitchDropsBot.WinForms
     {
         private static readonly HttpClient ImageHttpClient = CreateImageHttpClient();
 
+        private const string NoInventoryIconKey = "__no_inventory_icon__";
+
         private readonly TwitchUser twitchUser;
         public TabPage TabPage => currentTabPage;
         private readonly object imageListLock = new object();
@@ -172,6 +174,7 @@ namespace TwitchDropsBot.WinForms
                 ColorDepth = ColorDepth.Depth32Bit,
                 TransparentColor = Color.Transparent
             };
+            inventoryTreeImageList.Images.Add(NoInventoryIconKey, new Bitmap(24, 24));
 
             inventoryTreeView = new TreeView
             {
@@ -467,6 +470,7 @@ namespace TwitchDropsBot.WinForms
                             if (imageList.Images.Count > 512)
                             {
                                 imageList.Images.Clear();
+                                imageList.Images.Add(NoInventoryIconKey, new Bitmap(24, 24));
                             }
 
                             imageList.Images.Add(url, new Bitmap(image));
@@ -528,8 +532,12 @@ namespace TwitchDropsBot.WinForms
                         .Where(item => item.Section == InventoryViewSection.Earned)
                         .ToList();
 
-                    inventoryTreeView.Nodes.Add(BuildSectionNode($"In progress ({inProgress.Count})", inProgress));
-                    inventoryTreeView.Nodes.Add(BuildSectionNode($"Earned ({earned.Count})", earned));
+                    var inProgressNode = BuildSectionNode($"In progress ({inProgress.Count})", inProgress);
+                    var earnedNode = BuildSectionNode($"Earned ({earned.Count})", earned);
+                    inventoryTreeView.Nodes.Add(inProgressNode);
+                    inventoryTreeView.Nodes.Add(earnedNode);
+                    ApplyImageKey(inProgressNode, null);
+                    ApplyImageKey(earnedNode, null);
                     inventoryTreeView.CollapseAll();
                 }
                 finally
@@ -709,8 +717,8 @@ namespace TwitchDropsBot.WinForms
         {
             if (string.IsNullOrEmpty(imageKey))
             {
-                node.ImageKey = string.Empty;
-                node.SelectedImageKey = string.Empty;
+                node.ImageKey = NoInventoryIconKey;
+                node.SelectedImageKey = NoInventoryIconKey;
                 node.ImageIndex = -1;
                 node.SelectedImageIndex = -1;
                 return;
