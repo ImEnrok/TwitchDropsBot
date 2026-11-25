@@ -32,7 +32,8 @@ public class TwitchBot : BaseBot<TwitchUser>
     private IOptionsMonitor<BotSettings> _botSettings;
     private List<string> _gamesToCheck;
     private readonly Dictionary<string, DateTime> _failedRewardCodeModals = new();
-    private readonly SemaphoreSlim _inventoryRefreshLock = new(1, 1);
+    private readonly SemaphoreSlim _inventoryClaimLock = new(1, 1);
+    private readonly SemaphoreSlim _inventorySnapshotLock = new(1, 1);
 
     public TwitchBot(
         TwitchUser user,
@@ -327,19 +328,31 @@ public class TwitchBot : BaseBot<TwitchUser>
         BotUser.Status = BotStatus.Watching;
         Logger.LogInformation(
             $"Current drop campaign: {campaign.Name} ({campaign.Game?.DisplayName}), watching {broadcaster.Login} | {broadcaster.Id}");
-        await WatchStreamAsync(broadcaster, dropCurrentRewardGroup, campaign);
-        await RefreshInventoryAsync(claimRewards: true);
+        try
+        {
+            await WatchStreamAsync(broadcaster, dropCurrentRewardGroup, campaign);
+        }
+        finally
+        {
+            await RefreshInventoryAsync(claimRewards: true);
+        }
 
         Logger.LogDebug("Loop ended");
     }
 
     public async Task RefreshInventoryAsync(bool claimRewards = false)
     {
-        await _inventoryRefreshLock.WaitAsync();
+        var refreshLock = claimRewards ? _inventoryClaimLock : _inventorySnapshotLock;
+
+        await refreshLock.WaitAsync();
         try
         {
             var inventory = await BotUser.TwitchRepository.FetchInventoryDropsAsync();
-            if (inventory is null) return;
+            if (inventory is null)
+            {
+                Logger.LogWarning("Inventory refresh returned null for {login}", BotUser.Login);
+                return;
+            }
 
             if (claimRewards)
             {
@@ -350,7 +363,7 @@ public class TwitchBot : BaseBot<TwitchUser>
             BotUser.Inventory = inventory;
             Logger.LogDebug("Inventory refreshed: {campaigns} campaigns, {drops} drops, {earned} earned",
                 inventory.DropCampaignsInProgress?.Count ?? 0,
-                inventory.DropCampaignsInProgress?.Sum(c => c.TimeBasedDrops?.Count ?? 0) ?? 0,
+                inventory.DropCampaignsInProgress?.Where(c => c is not null).Sum(c => c.TimeBasedDrops?.Count ?? 0) ?? 0,
                 inventory.EarnedDropRewards?.Edges?.Count ?? 0);
         }
         catch (Exception ex)
@@ -359,7 +372,7 @@ public class TwitchBot : BaseBot<TwitchUser>
         }
         finally
         {
-            _inventoryRefreshLock.Release();
+            refreshLock.Release();
         }
     }
 
@@ -1178,24 +1191,26 @@ public class TwitchBot : BaseBot<TwitchUser>
                 continue;
             }
 
+            var benefit = timeBasedDrop.BenefitEdges?.FirstOrDefault()?.Benefit;
+            var itemName = benefit?.Name ?? timeBasedDrop.Name ?? "Unknown item";
+            var itemImage = benefit?.ImageAssetURL ?? dropCampaignInProgress.Game?.BoxArtUrl ?? string.Empty;
+
             try
             {
                 var claimed = await BotUser.TwitchRepository.ClaimDropAsync(dropSelf.DropInstanceID);
                 if (claimed)
                 {
                     dropSelf.IsClaimed = true;
-                    var isLastDrop = dropCampaignInProgress.TimeBasedDrops?.All(d => d.Self?.IsClaimed == true) ?? false;
+                    var isLastDrop = dropCampaignInProgress.TimeBasedDrops
+                        ?.Where(d => d is not null)
+                        .All(d => d!.Self?.IsClaimed == true) ?? false;
                     var gameName = dropCampaignInProgress.Game?.DisplayName ?? dropCampaignInProgress.Game?.Name ?? "Unknown Game";
-                    var itemName = timeBasedDrop.BenefitEdges.FirstOrDefault()?.Benefit.Name ?? timeBasedDrop.Name;
-                    var itemImage = timeBasedDrop.BenefitEdges.FirstOrDefault()?.Benefit.ImageAssetURL ?? dropCampaignInProgress.Game?.BoxArtUrl ?? string.Empty;
                     var uniqueKey = $"twitch-{BotUser.Login}-{dropCampaignInProgress.Id}";
                     await NotificationService.SendClaimNotification(BotUser, gameName, dropCampaignInProgress.Name, itemName, itemImage, uniqueKey, isLastDrop: isLastDrop);
                 }
             }
             catch (Exception e)
             {
-                var itemName = timeBasedDrop.BenefitEdges.FirstOrDefault()?.Benefit.Name ?? timeBasedDrop.Name;
-                var itemImage = timeBasedDrop.BenefitEdges.FirstOrDefault()?.Benefit.ImageAssetURL ?? dropCampaignInProgress.Game?.BoxArtUrl ?? string.Empty;
                 Logger.LogError(e, $"Failed to claim drop {itemName} for campaign {dropCampaignInProgress.Name}.");
                 var message = $"Can't claim {itemName} for the campaign {dropCampaignInProgress.Name}. Twitch API error or account not linked.";
                 await NotifyError("CLAIM ERROR", message, itemImage);
